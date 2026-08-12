@@ -345,16 +345,16 @@ class AppGUI:
             filetypes=[("Student List Files", "*.csv *.xlsx *.xls"), ("All Files", "*.*")]
         )
         if file_path:
-            ids, err = ExcelHandler.load_student_list(file_path)
+            items, err = ExcelHandler.load_student_list(file_path)
             if err:
                 self.logger.error(err)
                 messagebox.showerror("Load Error", err)
                 return
 
-            self.student_ids = ids
+            self.student_ids = [clean_id for clean_id, _ in items]
             self.student_listbox.delete(0, tk.END)
-            for sid in self.student_ids:
-                self.student_listbox.insert(tk.END, sid)
+            for _, meta_str in items:
+                self.student_listbox.insert(tk.END, meta_str)
 
             count = len(self.student_ids)
             self.lbl_file_path.config(text=os.path.basename(file_path))
@@ -382,7 +382,7 @@ class AppGUI:
 
     def _load_excel_file(self, file_path: str):
         self.lbl_file_path.config(text=os.path.basename(file_path))
-        self.student_ids, err = ExcelHandler.load_photographed_students(file_path)
+        items, err = ExcelHandler.load_photographed_students(file_path)
         
         self.student_listbox.delete(0, tk.END)
         if err:
@@ -391,8 +391,9 @@ class AppGUI:
             messagebox.showerror("Excel Error", err)
             return
 
-        for sid in self.student_ids:
-            self.student_listbox.insert(tk.END, sid)
+        self.student_ids = [clean_id for clean_id, _ in items]
+        for _, meta_str in items:
+            self.student_listbox.insert(tk.END, meta_str)
 
         count = len(self.student_ids)
         self.lbl_found_count.config(text=f"{count} PHOTOGRAPHED STUDENTS FOUND", foreground="#0066cc")

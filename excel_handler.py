@@ -25,12 +25,21 @@ class ExcelHandler:
                 df_headers = pd.read_excel(file_path, sheet_name=sheet_name, nrows=1)
             
             student_id_col = None
+            first_name_col = None
+            last_name_col = None
+            grade_col = None
             status_col = None
             
             for col in df_headers.columns:
                 col_clean = str(col).strip().lower().replace(' ', '').replace('_', '')
                 if col_clean in ['studentid', 'student', 'id']:
                     student_id_col = col
+                elif col_clean in ['firstname', 'first']:
+                    first_name_col = col
+                elif col_clean in ['lastname', 'last']:
+                    last_name_col = col
+                elif col_clean in ['grade', 'gr']:
+                    grade_col = col
                 elif col_clean == 'status':
                     status_col = col
             
@@ -39,21 +48,26 @@ class ExcelHandler:
             if not status_col:
                 return [], f"Missing required column 'status' in file."
 
+            dtypes = {student_id_col: str}
+            if first_name_col: dtypes[first_name_col] = str
+            if last_name_col: dtypes[last_name_col] = str
+            if grade_col: dtypes[grade_col] = str
+
             # Read whole sheet/file ensuring studentId column is read strictly as string
             if is_csv:
-                df = pd.read_csv(file_path, dtype={student_id_col: str})
+                df = pd.read_csv(file_path, dtype=dtypes)
             else:
                 df = pd.read_excel(
                     file_path, 
                     sheet_name=sheet_name, 
-                    dtype={student_id_col: str}
+                    dtype=dtypes
                 )
 
             cls._current_df = df.copy()
             cls._student_id_col_name = student_id_col
 
             # Filter rows where status is PHOTOGRAPHED
-            photographed_ids = []
+            photographed_items = []
             for _, row in df.iterrows():
                 raw_id = row[student_id_col]
                 raw_status = row[status_col]
@@ -68,20 +82,31 @@ class ExcelHandler:
                         clean_id = clean_id[:-2]
                     
                     if clean_id:
-                        photographed_ids.append(clean_id)
+                        fn = str(row[first_name_col]).strip() if first_name_col and not pd.isna(row[first_name_col]) else ""
+                        ln = str(row[last_name_col]).strip() if last_name_col and not pd.isna(row[last_name_col]) else ""
+                        gr = str(row[grade_col]).strip() if grade_col and not pd.isna(row[grade_col]) else ""
+
+                        name_part = f"{fn} {ln}".strip()
+                        meta_str = clean_id
+                        if name_part:
+                            meta_str += f" | {name_part}"
+                        if gr:
+                            meta_str += f" | Gr: {gr}"
+
+                        photographed_items.append((clean_id, meta_str))
 
             # Remove duplicates preserving order
             seen = set()
-            unique_ids = []
-            for sid in photographed_ids:
-                if sid not in seen:
-                    seen.add(sid)
-                    unique_ids.append(sid)
+            unique_items = []
+            for clean_id, meta_str in photographed_items:
+                if clean_id not in seen:
+                    seen.add(clean_id)
+                    unique_items.append((clean_id, meta_str))
 
-            if not unique_ids:
+            if not unique_items:
                 return [], "No rows found matching status = 'PHOTOGRAPHED'."
 
-            return unique_ids, ""
+            return unique_items, ""
 
         except Exception as e:
             return [], f"Error processing Excel file: {str(e)}"
