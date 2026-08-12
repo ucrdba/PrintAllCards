@@ -222,8 +222,14 @@ class AppGUI:
         self.progress_bar = ttk.Progressbar(prog_frame, orient=tk.HORIZONTAL, mode='determinate')
         self.progress_bar.pack(fill=tk.X, pady=5)
 
-        self.lbl_status = ttk.Label(prog_frame, text="Status: Ready", font=("Arial", 9, "italic"), foreground="gray")
-        self.lbl_status.pack(anchor=tk.W)
+        lbl_status_box = ttk.Frame(prog_frame)
+        lbl_status_box.pack(fill=tk.X)
+
+        self.lbl_status = ttk.Label(lbl_status_box, text="Status: Ready", font=("Arial", 9, "italic"), foreground="gray")
+        self.lbl_status.pack(side=tk.LEFT)
+
+        self.lbl_eta = ttk.Label(lbl_status_box, text="Estimated Time Remaining: --", font=("Arial", 9, "bold"), foreground="#0066cc")
+        self.lbl_eta.pack(side=tk.RIGHT)
 
         # --- SECTION 7: LOG WINDOW ---
         log_frame = ttk.LabelFrame(main_frame, text="LOG", padding="8")
@@ -544,7 +550,27 @@ class AppGUI:
 
             sid = self.student_ids[0]
             processed_count = printed + skipped + errors + 1
-            self._update_progress_ui(sid, processed_count, total)
+            
+            # Compute average time per card and ETA after 5 cards processed
+            eta_str = "Calculating ETA..."
+            if processed_count > 5:
+                elapsed_sec = time.time() - start_time
+                avg_time_per_card = elapsed_sec / (processed_count - 1)
+                remaining_cards = total - (processed_count - 1)
+                est_remaining_sec = int(avg_time_per_card * remaining_cards)
+
+                hours = est_remaining_sec // 3600
+                minutes = (est_remaining_sec % 3600) // 60
+                seconds = est_remaining_sec % 60
+
+                if hours > 0:
+                    eta_str = f"ETA: {hours}h {minutes}m {seconds}s"
+                else:
+                    eta_str = f"ETA: {minutes}m {seconds}s"
+            elif processed_count <= 5:
+                eta_str = f"ETA: Calibrating (processing first 5 cards...)"
+
+            self._update_progress_ui(sid, processed_count, total, eta_str)
             self.logger.log(f"Processing student {sid} ({processed_count}/{total})")
 
             success, msg = self.automation.process_single_student(sid)
@@ -589,13 +615,15 @@ class AppGUI:
         self.root.after(0, lambda: self._show_summary(total, printed, skipped, errors, elapsed))
         self.is_processing = False
 
-    def _update_progress_ui(self, student_id: str, current: int, total: int):
+    def _update_progress_ui(self, student_id: str, current: int, total: int, eta_str: str = ""):
         def _upd():
             self.lbl_curr_student.config(text=f"Current Student: {student_id}")
             pct = (current / total) * 100
             self.lbl_prog_stats.config(text=f"Progress: {current} / {total} ({pct:.1f}%)")
             self.progress_bar['value'] = pct
             self.lbl_status.config(text=f"Status: Processing {student_id}...")
+            if eta_str:
+                self.lbl_eta.config(text=eta_str)
         self.root.after(0, _upd)
 
     def _prompt_timeout_dialog(self, student_id: str, error_msg: str) -> str:
