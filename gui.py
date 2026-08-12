@@ -135,6 +135,10 @@ class AppGUI:
         self.ent_delay_between = ttk.Entry(t_grid, width=8)
         self.ent_delay_between.grid(row=3, column=1, padx=5, pady=2)
 
+        ttk.Label(t_grid, text="Print Hotkey (e.g. ctrl+p):").grid(row=4, column=0, sticky=tk.W, pady=2)
+        self.ent_print_hotkey = ttk.Entry(t_grid, width=8)
+        self.ent_print_hotkey.grid(row=4, column=1, padx=5, pady=2)
+
         # Clear Fields Button
         btn_clear_fields = ttk.Button(timing_frame, text="Clear All Fields", command=self._clear_all_fields)
         btn_clear_fields.pack(anchor=tk.W, pady=(5, 0))
@@ -225,6 +229,7 @@ class AppGUI:
         self.ent_delay_wait.insert(0, str(self.config.max_search_wait))
         self.ent_delay_print.insert(0, str(self.config.print_delay))
         self.ent_delay_between.insert(0, str(self.config.between_student_delay))
+        self.ent_print_hotkey.insert(0, str(self.config.print_hotkey))
 
         if self.config.last_excel_path and os.path.exists(self.config.last_excel_path):
             self._load_excel_file(self.config.last_excel_path)
@@ -240,6 +245,7 @@ class AppGUI:
         self.ent_delay_wait.delete(0, tk.END)
         self.ent_delay_print.delete(0, tk.END)
         self.ent_delay_between.delete(0, tk.END)
+        self.ent_print_hotkey.delete(0, tk.END)
         self.logger.log("Cleared all configuration input fields.")
 
     def _save_ui_to_config(self) -> bool:
@@ -253,6 +259,7 @@ class AppGUI:
             d_wait = self.ent_delay_wait.get().strip()
             d_print = self.ent_delay_print.get().strip()
             d_between = self.ent_delay_between.get().strip()
+            p_hk = self.ent_print_hotkey.get().strip()
 
             self.config.search_x = int(sx) if sx else 0
             self.config.search_y = int(sy) if sy else 0
@@ -263,6 +270,7 @@ class AppGUI:
             self.config.max_search_wait = float(d_wait) if d_wait else 15.0
             self.config.print_delay = float(d_print) if d_print else 2.0
             self.config.between_student_delay = float(d_between) if d_between else 0.5
+            self.config.print_hotkey = p_hk if p_hk else "ctrl+p"
             self.config.require_verification = self.var_require_verification.get()
             self.config.enable_mouse_trail = self.var_mouse_trail.get()
             self.config.dry_run = self.var_dry_run.get()

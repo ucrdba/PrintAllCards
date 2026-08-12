@@ -240,18 +240,37 @@ class AutomationController:
 
         # Step 5: Print if not dry run
         print_x, print_y = self.config.print_x, self.config.print_y
-        dynamic_print = self.find_uiautomation_control(['print'], ['button'])
+        dynamic_print = self.find_uiautomation_control(['print', 'print card', 'print photo'], ['button', 'menuitem', 'hyperlink', 'text', 'pane', 'group'])
         if dynamic_print:
             print_x, print_y = dynamic_print
-            self.logger.log(f"Dynamically located Print button via Windows UIAutomation at ({print_x}, {print_y})")
+            self.logger.log(f"Dynamically located Electron Print element at ({print_x}, {print_y})")
 
         if self.config.dry_run:
-            self.logger.log(f"[DRY RUN] Would click Print button at ({print_x}, {print_y})")
-            if self.config.enable_mouse_trail:
+            self.logger.log(f"[DRY RUN] Would trigger Print action at ({print_x}, {print_y})")
+            if self.config.enable_mouse_trail and print_x > 0:
                 pyautogui.moveTo(print_x, print_y, duration=0.3, tween=pyautogui.easeOutQuad)
         else:
-            self.logger.log(f"Clicking Print button at ({print_x}, {print_y})")
-            self.move_and_click(print_x, print_y)
+            if print_x > 0 and print_y > 0:
+                self.logger.log(f"Clicking Electron Print button at ({print_x}, {print_y})")
+                # For Electron apps: Move mouse, click once to ensure window/tab focus, then click target
+                if self.config.enable_mouse_trail:
+                    pyautogui.moveTo(print_x, print_y, duration=0.3, tween=pyautogui.easeOutQuad)
+                else:
+                    pyautogui.moveTo(print_x, print_y)
+                time.sleep(0.1)
+                pyautogui.click(print_x, print_y)
+                time.sleep(0.05)
+                pyautogui.click(print_x, print_y)  # Double-click fallback for Electron web buttons
+            
+            # Send Keyboard Hotkey trigger if configured
+            if self.config.print_hotkey:
+                self.logger.log(f"Sending Print Hotkey trigger: '{self.config.print_hotkey}'")
+                hk = [k.strip() for k in self.config.print_hotkey.lower().split('+')]
+                if len(hk) > 1:
+                    pyautogui.hotkey(*hk)
+                else:
+                    pyautogui.press(hk[0])
+
             if not self.safe_sleep(self.config.print_delay):
                 return False, "Interrupted during print delay"
 

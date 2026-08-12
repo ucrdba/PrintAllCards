@@ -15,6 +15,7 @@ class AppConfig:
     between_student_delay: float = 0.5
     require_verification: bool = False
     enable_mouse_trail: bool = True
+    print_hotkey: str = "ctrl+p"
     dry_run: bool = False
     last_excel_path: str = ""
 
