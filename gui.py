@@ -82,6 +82,16 @@ class AppGUI:
         self.student_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
+        # Save / Load remaining student list buttons
+        export_btn_box = ttk.Frame(excel_frame)
+        export_btn_box.pack(fill=tk.X, pady=(5, 0))
+
+        btn_save_list = ttk.Button(export_btn_box, text="Save Remaining List", command=self._save_remaining_list)
+        btn_save_list.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
+
+        btn_load_list = ttk.Button(export_btn_box, text="Load Saved List", command=self._load_saved_list)
+        btn_load_list.pack(side=tk.RIGHT, expand=True, fill=tk.X, padx=2)
+
         # --- SECTION 2: AUTOMATION LOCATIONS ---
         loc_frame = ttk.LabelFrame(right_pane, text="AUTOMATION LOCATIONS", padding="8")
         loc_frame.pack(fill=tk.X, pady=(0, 5))
@@ -295,11 +305,54 @@ class AppGUI:
 
     def _select_excel_file(self):
         file_path = filedialog.askopenfilename(
-            title="Select Excel File",
-            filetypes=[("Excel Files", "*.xlsx *.xls"), ("All Files", "*.*")]
+            title="Select Excel or CSV File",
+            filetypes=[("Data Files", "*.xlsx *.xls *.csv"), ("Excel Files", "*.xlsx *.xls"), ("CSV Files", "*.csv"), ("All Files", "*.*")]
         )
         if file_path:
             self._load_excel_file(file_path)
+
+    def _save_remaining_list(self):
+        """Saves the current remaining unprinted student IDs to a CSV or XLSX file."""
+        if not self.student_ids:
+            messagebox.showwarning("No Students", "There are no remaining student IDs to save.")
+            return
+
+        file_path = filedialog.asksaveasfilename(
+            title="Save Remaining Student List",
+            defaultextension=".csv",
+            filetypes=[("CSV File", "*.csv"), ("Excel File", "*.xlsx")]
+        )
+        if file_path:
+            success, msg = ExcelHandler.export_remaining_students(self.student_ids, file_path)
+            if success:
+                self.logger.log(msg)
+                messagebox.showinfo("Export Success", f"Saved {len(self.student_ids)} remaining student IDs to file:\n{file_path}")
+            else:
+                self.logger.error(msg)
+                messagebox.showerror("Export Error", msg)
+
+    def _load_saved_list(self):
+        """Loads a previously saved student list directly into the app."""
+        file_path = filedialog.askopenfilename(
+            title="Load Saved Student List",
+            filetypes=[("Student List Files", "*.csv *.xlsx *.xls"), ("All Files", "*.*")]
+        )
+        if file_path:
+            ids, err = ExcelHandler.load_student_list(file_path)
+            if err:
+                self.logger.error(err)
+                messagebox.showerror("Load Error", err)
+                return
+
+            self.student_ids = ids
+            self.student_listbox.delete(0, tk.END)
+            for sid in self.student_ids:
+                self.student_listbox.insert(tk.END, sid)
+
+            count = len(self.student_ids)
+            self.lbl_file_path.config(text=os.path.basename(file_path))
+            self.lbl_found_count.config(text=f"{count} SAVED STUDENTS LOADED", foreground="#0066cc")
+            self.logger.log(f"Loaded saved student list: {file_path} ({count} students)")
 
     def _load_excel_file(self, file_path: str):
         self.lbl_file_path.config(text=os.path.basename(file_path))

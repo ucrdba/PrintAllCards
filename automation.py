@@ -220,9 +220,32 @@ class AutomationController:
         pyperclip.copy(student_id)
         time.sleep(0.15)
         pyautogui.hotkey('ctrl', 'v')
-        time.sleep(0.15)
-        
-        # Press Enter to submit search
+        time.sleep(0.2)
+
+        # Check if text/numbers exist in the box before pressing Enter
+        has_text = False
+        try:
+            pyautogui.hotkey('ctrl', 'a')
+            pyautogui.hotkey('ctrl', 'c')
+            time.sleep(0.1)
+            copied = pyperclip.paste().strip()
+            # If text/numbers are present in the box
+            if copied and any(char.isdigit() for char in copied):
+                has_text = True
+                # Deselect text by moving cursor to end of line
+                pyautogui.press('right')
+                time.sleep(0.05)
+        except Exception:
+            pass
+
+        # Fallback: if clipboard check is unavailable, try typing explicitly to ensure numbers are entered
+        if not has_text:
+            self.logger.log(f"No text detected after paste. Typing Student ID explicitly: {student_id}")
+            pyautogui.write(student_id, interval=0.03)
+            time.sleep(0.15)
+
+        # Press Enter only after ensuring numbers/ID exist in the box
+        self.logger.log(f"Pressing Enter key for Student ID: {student_id}")
         pyautogui.press('enter')
 
         # Step 4: Verification
