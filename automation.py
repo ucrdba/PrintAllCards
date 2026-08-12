@@ -133,6 +133,53 @@ class AutomationController:
 
         return False
 
+    def move_and_click(self, x: int, y: int):
+        """Moves mouse smoothly to (x, y) if mouse trail is enabled, then clicks."""
+        if self.config.enable_mouse_trail:
+            pyautogui.moveTo(x, y, duration=0.3, tween=pyautogui.easeOutQuad)
+        else:
+            pyautogui.moveTo(x, y)
+        time.sleep(0.1)
+        # Perform click with standard duration to register on Windows controls
+        pyautogui.click(x, y, duration=0.05)
+
+    def find_uiautomation_control(self, name_keywords: list, control_types: list = None) -> Optional[Tuple[int, int]]:
+        """
+        Dynamically searches open Windows controls using UIAutomation to locate
+        a button or edit box matching name_keywords (e.g. 'Print', 'Search', 'StudentSearch').
+        Returns (x, y) center coordinates if found.
+        """
+        if not HAS_UIAUTOMATION:
+            return None
+
+        try:
+            # Walk top-level window controls
+            root = auto.GetRootControl()
+            for window in root.GetChildren():
+                if not window.IsOffscreen:
+                    for child in window.GetDescendants():
+                        try:
+                            c_name = str(child.Name).lower().strip()
+                            c_type = str(child.ControlTypeName).lower().strip()
+
+                            # Check control type filter if specified
+                            if control_types and not any(ct in c_type for ct in control_types):
+                                continue
+
+                            # Check if name contains any of the keywords
+                            if any(kw in c_name for kw in name_keywords):
+                                rect = child.BoundingRectangle
+                                if rect and rect.width() > 0 and rect.height() > 0:
+                                    cx = rect.left + rect.width() // 2
+                                    cy = rect.top + rect.height() // 2
+                                    return (cx, cy)
+                        except Exception:
+                            continue
+        except Exception as e:
+            self.logger.error(f"UIAutomation search error: {e}")
+
+        return None
+
     def process_single_student(self, student_id: str, is_test: bool = False) -> Tuple[bool, str]:
         """
         Performs the 4-step sequence:
@@ -146,20 +193,36 @@ class AutomationController:
             return False, "Process stopped by user"
 
         # Step 1: Click Search location
-        self.logger.log(f"Step 1 - Clicking Search Box at ({self.config.search_x}, {self.config.search_y})")
-        pyautogui.click(self.config.search_x, self.config.search_y)
+        search_x, search_y = self.config.search_x, self.config.search_y
+
+        # Try dynamic UIAutomation lookup for search box first
+        dynamic_search = self.find_uiautomation_control(['studentsearch', 'search', 'student id'], ['edit', 'textbox', 'input'])
+        if dynamic_search:
+            search_x, search_y = dynamic_search
+            self.logger.log(f"Step 1 - Dynamically located Search Box via Windows UIAutomation at ({search_x}, {search_y})")
+        else:
+            self.logger.log(f"Step 1 - Clicking Search Box at configured location ({search_x}, {search_y})")
+
+        self.move_and_click(search_x, search_y)
         if not self.safe_sleep(self.config.search_start_delay):
             return False, "Interrupted"
 
         # Step 2: Clear existing content
         self.logger.log("Step 2 - Clearing existing text")
+        time.sleep(0.1)
         pyautogui.hotkey('ctrl', 'a')
+        time.sleep(0.05)
         pyautogui.press('backspace')
+        time.sleep(0.1)
 
-        # Step 3: Paste Student ID from clipboard and press Enter
-        self.logger.log(f"Step 3 - Copying & pasting Student ID: {student_id} (and pressing Enter)")
+        # Step 3: Copy to clipboard & paste single instance
+        self.logger.log(f"Step 3 - Copying & pasting Student ID: {student_id}")
         pyperclip.copy(student_id)
+        time.sleep(0.15)
         pyautogui.hotkey('ctrl', 'v')
+        time.sleep(0.15)
+        
+        # Press Enter to submit search
         pyautogui.press('enter')
 
         # Step 4: Verification
@@ -176,11 +239,19 @@ class AutomationController:
             return True, f"Student {student_id} verified successfully!"
 
         # Step 5: Print if not dry run
+        print_x, print_y = self.config.print_x, self.config.print_y
+        dynamic_print = self.find_uiautomation_control(['print'], ['button'])
+        if dynamic_print:
+            print_x, print_y = dynamic_print
+            self.logger.log(f"Dynamically located Print button via Windows UIAutomation at ({print_x}, {print_y})")
+
         if self.config.dry_run:
-            self.logger.log(f"[DRY RUN] Would click Print button at ({self.config.print_x}, {self.config.print_y})")
+            self.logger.log(f"[DRY RUN] Would click Print button at ({print_x}, {print_y})")
+            if self.config.enable_mouse_trail:
+                pyautogui.moveTo(print_x, print_y, duration=0.3, tween=pyautogui.easeOutQuad)
         else:
-            self.logger.log(f"Clicking Print button at ({self.config.print_x}, {self.config.print_y})")
-            pyautogui.click(self.config.print_x, self.config.print_y)
+            self.logger.log(f"Clicking Print button at ({print_x}, {print_y})")
+            self.move_and_click(print_x, print_y)
             if not self.safe_sleep(self.config.print_delay):
                 return False, "Interrupted during print delay"
 
@@ -191,7 +262,11 @@ class AutomationController:
 
     def test_print_click(self):
         """Moves mouse and clicks print button once for test print."""
-        self.logger.log(f"Testing Print button click at ({self.config.print_x}, {self.config.print_y})")
-        pyautogui.moveTo(self.config.print_x, self.config.print_y)
-        time.sleep(0.1)
-        pyautogui.click(self.config.print_x, self.config.print_y)
+        print_x, print_y = self.config.print_x, self.config.print_y
+        dynamic_print = self.find_uiautomation_control(['print'], ['button'])
+        if dynamic_print:
+            print_x, print_y = dynamic_print
+            self.logger.log(f"Dynamically located Print button via Windows UIAutomation at ({print_x}, {print_y})")
+
+        self.logger.log(f"Testing Print button click at ({print_x}, {print_y})")
+        self.move_and_click(print_x, print_y)

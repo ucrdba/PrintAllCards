@@ -140,9 +140,13 @@ class AppGUI:
         btn_clear_fields.pack(anchor=tk.W, pady=(5, 0))
 
         # Checkboxes
+        self.var_mouse_trail = tk.BooleanVar(value=self.config.enable_mouse_trail)
+        chk_trail = ttk.Checkbutton(timing_frame, text="Enable Visible Mouse Movement Trail", variable=self.var_mouse_trail)
+        chk_trail.pack(anchor=tk.W, pady=(5, 0))
+
         self.var_require_verification = tk.BooleanVar(value=self.config.require_verification)
         chk_verify = ttk.Checkbutton(timing_frame, text="Require Strict StudentSearch Verification", variable=self.var_require_verification)
-        chk_verify.pack(anchor=tk.W, pady=(5, 0))
+        chk_verify.pack(anchor=tk.W, pady=(2, 0))
 
         self.var_dry_run = tk.BooleanVar(value=self.config.dry_run)
         chk_dry_run = ttk.Checkbutton(timing_frame, text="Dry Run (Do not click Print)", variable=self.var_dry_run)
@@ -260,6 +264,7 @@ class AppGUI:
             self.config.print_delay = float(d_print) if d_print else 2.0
             self.config.between_student_delay = float(d_between) if d_between else 0.5
             self.config.require_verification = self.var_require_verification.get()
+            self.config.enable_mouse_trail = self.var_mouse_trail.get()
             self.config.dry_run = self.var_dry_run.get()
 
             # Validation

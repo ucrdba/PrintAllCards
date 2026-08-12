@@ -24,7 +24,7 @@ class ExcelHandler:
             
             for col in df_headers.columns:
                 col_clean = str(col).strip().lower().replace(' ', '').replace('_', '')
-                if col_clean == 'studentid':
+                if col_clean in ['studentid', 'student', 'id']:
                     student_id_col = col
                 elif col_clean == 'status':
                     status_col = col
