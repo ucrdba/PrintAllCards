@@ -178,7 +178,7 @@ class AppGUI:
         self.btn_stop.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=5)
 
         # Emergency Stop Banner
-        lbl_emerg = ttk.Label(control_frame, text="Emergency stop enabled: Move mouse to the upper-left corner of the screen.", foreground="#cc0000", font=("Arial", 9, "italic"))
+        lbl_emerg = ttk.Label(control_frame, text="Emergency stop hotkey: Press the ESC key anytime or move mouse to upper-left corner.", foreground="#cc0000", font=("Arial", 9, "italic"))
         lbl_emerg.pack(pady=(5, 0))
 
         # --- SECTION 6: PROGRESS & STATUS ---
@@ -445,17 +445,21 @@ class AppGUI:
         errors = 0
         start_time = time.time()
 
-        for idx, sid in enumerate(self.student_ids):
+        while self.student_ids:
             if self.automation.stop_event.is_set():
                 break
 
-            self._update_progress_ui(sid, idx + 1, total)
-            self.logger.log(f"Processing student {sid} ({idx+1}/{total})")
+            sid = self.student_ids[0]
+            processed_count = printed + skipped + errors + 1
+            self._update_progress_ui(sid, processed_count, total)
+            self.logger.log(f"Processing student {sid} ({processed_count}/{total})")
 
             success, msg = self.automation.process_single_student(sid)
 
             if success:
                 printed += 1
+                self.student_ids.pop(0)
+                self.root.after(0, lambda: self.student_listbox.delete(0))
             else:
                 if self.automation.stop_event.is_set():
                     self.logger.log(f"Batch stopped on student {sid}")
@@ -471,11 +475,17 @@ class AppGUI:
                     retry_success, retry_msg = self.automation.process_single_student(sid)
                     if retry_success:
                         printed += 1
+                        self.student_ids.pop(0)
+                        self.root.after(0, lambda: self.student_listbox.delete(0))
                     else:
                         errors += 1
+                        self.student_ids.pop(0)
+                        self.root.after(0, lambda: self.student_listbox.delete(0))
                 elif user_choice == "skip":
                     self.logger.log(f"User chose SKIP for student {sid}")
                     skipped += 1
+                    self.student_ids.pop(0)
+                    self.root.after(0, lambda: self.student_listbox.delete(0))
                 else:  # stop
                     self.logger.log(f"User chose STOP on student {sid}")
                     self.automation.stop_event.set()
@@ -557,6 +567,6 @@ class AppGUI:
         if self.automation.emergency_stop_triggered:
             self._stop_automation()
             self.automation.emergency_stop_triggered = False
-            messagebox.showerror("Emergency Stop", "Automation stopped because mouse moved to upper-left corner!")
+            messagebox.showerror("Emergency Stop", "Automation stopped via Emergency Hotkey (ESC key) or Mouse Corner!")
         
         self.root.after(200, self._check_automation_status)

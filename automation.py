@@ -13,6 +13,8 @@ try:
 except ImportError:
     HAS_UIAUTOMATION = False
 
+from pynput import keyboard
+
 # Enable PyAutoGUI safety features
 pyautogui.FAILSAFE = True
 pyautogui.PAUSE = 0.05
@@ -29,6 +31,25 @@ class AutomationController:
         self.is_running = False
         self.current_student = ""
         self.emergency_stop_triggered = False
+
+        self.key_listener = None
+        self._start_keyboard_listener()
+
+    def _start_keyboard_listener(self):
+        """Starts background global keyboard listener for ESC key emergency stop."""
+        def on_press(key):
+            try:
+                # Check for ESC key or Ctrl+Shift+S
+                if key == keyboard.Key.esc:
+                    self.logger.error("EMERGENCY HOTKEY TRIGGERED (ESC key pressed)!")
+                    self.stop_event.set()
+                    self.emergency_stop_triggered = True
+            except Exception:
+                pass
+
+        self.key_listener = keyboard.Listener(on_press=on_press)
+        self.key_listener.daemon = True
+        self.key_listener.start()
 
     def reset_controls(self):
         self.stop_event.clear()
