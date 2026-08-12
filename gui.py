@@ -75,7 +75,7 @@ class AppGUI:
         list_frame = ttk.Frame(excel_frame)
         list_frame.pack(fill=tk.BOTH, expand=True, pady=2)
 
-        self.student_listbox = tk.Listbox(list_frame, height=12, selectmode=tk.SINGLE, font=("Consolas", 10))
+        self.student_listbox = tk.Listbox(list_frame, height=12, selectmode=tk.EXTENDED, font=("Consolas", 10))
         scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.student_listbox.yview)
         self.student_listbox.config(yscrollcommand=scrollbar.set)
         
@@ -86,11 +86,18 @@ class AppGUI:
         export_btn_box = ttk.Frame(excel_frame)
         export_btn_box.pack(fill=tk.X, pady=(5, 0))
 
+        btn_remove_student = ttk.Button(export_btn_box, text="🗑️ Remove Selected", command=self._remove_selected_student)
+        btn_remove_student.pack(side=tk.LEFT, padx=2)
+
         btn_save_list = ttk.Button(export_btn_box, text="Save Remaining List", command=self._save_remaining_list)
         btn_save_list.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
 
         btn_load_list = ttk.Button(export_btn_box, text="Load Saved List", command=self._load_saved_list)
         btn_load_list.pack(side=tk.RIGHT, expand=True, fill=tk.X, padx=2)
+
+        # Bind Delete / Backspace keys to listbox for quick removal
+        self.student_listbox.bind("<Delete>", lambda e: self._remove_selected_student())
+        self.student_listbox.bind("<BackSpace>", lambda e: self._remove_selected_student())
 
         # --- SECTION 2: AUTOMATION LOCATIONS ---
         loc_frame = ttk.LabelFrame(right_pane, text="AUTOMATION LOCATIONS", padding="8")
@@ -353,6 +360,25 @@ class AppGUI:
             self.lbl_file_path.config(text=os.path.basename(file_path))
             self.lbl_found_count.config(text=f"{count} SAVED STUDENTS LOADED", foreground="#0066cc")
             self.logger.log(f"Loaded saved student list: {file_path} ({count} students)")
+
+    def _remove_selected_student(self):
+        """Removes all currently selected student IDs from the listbox and queue."""
+        selected_indices = self.student_listbox.curselection()
+        if not selected_indices:
+            messagebox.showinfo("Select Student", "Please select one or more students from the list to remove.")
+            return
+
+        removed_ids = []
+        # Delete in reverse order so indices remain valid
+        for idx in sorted(selected_indices, reverse=True):
+            removed_id = self.student_ids.pop(idx)
+            self.student_listbox.delete(idx)
+            removed_ids.append(removed_id)
+
+        # Update remaining count label
+        count = len(self.student_ids)
+        self.lbl_found_count.config(text=f"{count} PHOTOGRAPHED STUDENTS REMAINING", foreground="#0066cc")
+        self.logger.log(f"Removed {len(removed_ids)} student ID(s) from list: {', '.join(reversed(removed_ids))}")
 
     def _load_excel_file(self, file_path: str):
         self.lbl_file_path.config(text=os.path.basename(file_path))
