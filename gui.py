@@ -6,6 +6,7 @@ import os
 from typing import List
 
 import pyautogui
+import pyperclip
 from pynput import mouse
 from config import AppConfig
 from logger import AppLogger
@@ -117,6 +118,8 @@ class AppGUI:
         # Bind Delete / Backspace keys to Treeview for quick removal
         self.student_tree.bind("<Delete>", lambda e: self._remove_selected_student())
         self.student_tree.bind("<BackSpace>", lambda e: self._remove_selected_student())
+        # Bind double-click to copy Student ID to clipboard (paste buffer)
+        self.student_tree.bind("<Double-1>", self._on_student_double_click)
 
         # Backward-compatibility alias
         self.student_listbox = self.student_tree
@@ -476,6 +479,18 @@ class AppGUI:
         count = len(self.student_ids)
         self.lbl_found_count.config(text=f"{count} PHOTOGRAPHED STUDENTS REMAINING", foreground="#0066cc")
         self.logger.log(f"Removed {len(removed_ids)} student ID(s) from list: {', '.join(removed_ids)}")
+
+    def _on_student_double_click(self, event):
+        """Copies the double-clicked student ID directly into the system clipboard / paste buffer."""
+        item_id = self.student_tree.identify_row(event.y)
+        if not item_id:
+            selected = self.student_tree.selection()
+            if selected:
+                item_id = selected[0]
+        if item_id:
+            pyperclip.copy(item_id)
+            self.logger.log(f"Copied Student ID '{item_id}' to clipboard.")
+            self.lbl_status.config(text=f"Status: Copied Student ID '{item_id}' to clipboard")
 
     def _pop_student(self, student_id: str):
         """Removes a processed student from student_records, student_ids, and Treeview UI synchronously in memory."""
