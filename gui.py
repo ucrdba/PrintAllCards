@@ -25,6 +25,7 @@ class AppGUI:
         self.automation = AutomationController(self.config, self.logger)
 
         self.student_ids: List[str] = []
+        self.initial_total_count = 0
         self.is_processing = False
         self.automation_thread: threading.Thread = None
 
@@ -514,6 +515,8 @@ class AppGUI:
         self._refresh_treeview_from_records()
 
         count = len(self.student_ids)
+        self.initial_total_count = count
+        self._update_progress_from_records()
         self.lbl_found_count.config(text=f"{count} PHOTOGRAPHED STUDENTS FOUND", foreground="#0066cc")
         self.logger.log(f"Imported Sync Zip: {os.path.basename(file_path)} ({count} photographed students loaded)")
 
@@ -562,6 +565,8 @@ class AppGUI:
             self._refresh_treeview_from_records()
 
             count = len(self.student_ids)
+            self.initial_total_count = count
+            self._update_progress_from_records()
             self.lbl_file_path.config(text=os.path.basename(file_path))
             self.lbl_found_count.config(text=f"{count} SAVED STUDENTS LOADED", foreground="#0066cc")
             self.logger.log(f"Loaded saved student list: {file_path} ({count} students)")
@@ -656,6 +661,7 @@ class AppGUI:
                 self.student_tree.delete(student_id)
             count = len(self.student_ids)
             self.lbl_found_count.config(text=f"{count} PHOTOGRAPHED STUDENTS REMAINING", foreground="#0066cc")
+            self._update_progress_from_records()
 
         self.root.after(0, _do_ui_pop)
 
@@ -678,6 +684,8 @@ class AppGUI:
         self._refresh_treeview_from_records()
 
         count = len(self.student_ids)
+        self.initial_total_count = count
+        self._update_progress_from_records()
         self.lbl_found_count.config(text=f"{count} PHOTOGRAPHED STUDENTS FOUND", foreground="#0066cc")
         self.logger.log(f"Loaded Excel file: {file_path}")
         self.logger.log(f"Found {count} PHOTOGRAPHED students")
@@ -837,19 +845,20 @@ class AppGUI:
                 break
 
             sid = self.student_ids[0]
-            processed_count = printed + skipped + errors + 1
+            start_total = max(1, getattr(self, 'initial_total_count', len(self.student_ids)))
+            completed_so_far = max(0, start_total - len(self.student_ids))
             pause_limit = getattr(self.config, 'pause_after_cards', 0)
-            
+
             if pause_limit > 0:
                 rem_pause = max(0, pause_limit - batch_counter)
                 self.root.after(0, lambda r=rem_pause: self._update_pause_countdown(r))
-            
+
             # Compute average time per card and ETA after 5 cards processed
             eta_str = "Calculating ETA..."
-            if processed_count > 5:
+            if completed_so_far > 5:
                 elapsed_sec = time.time() - start_time
-                avg_time_per_card = elapsed_sec / (processed_count - 1)
-                remaining_cards = total - (processed_count - 1)
+                avg_time_per_card = elapsed_sec / max(1, completed_so_far)
+                remaining_cards = len(self.student_ids)
                 est_remaining_sec = int(avg_time_per_card * remaining_cards)
 
                 hours = est_remaining_sec // 3600
@@ -860,11 +869,11 @@ class AppGUI:
                     eta_str = f"ETA: {hours}h {minutes}m {seconds}s"
                 else:
                     eta_str = f"ETA: {minutes}m {seconds}s"
-            elif processed_count <= 5:
+            elif completed_so_far <= 5:
                 eta_str = f"ETA: Calibrating (processing first 5 cards...)"
 
-            self._update_progress_ui(sid, processed_count, total, eta_str)
-            self.logger.log(f"Processing student {sid} ({processed_count}/{total})")
+            self._update_progress_ui(sid, eta_str)
+            self.logger.log(f"Processing student {sid} ({completed_so_far + 1}/{start_total})")
 
             success, msg = self.automation.process_single_student(sid)
 
@@ -918,12 +927,27 @@ class AppGUI:
         self.root.after(0, lambda: self._show_summary(total, printed, skipped, errors, elapsed))
         self.is_processing = False
 
-    def _update_progress_ui(self, student_id: str, current: int, total: int, eta_str: str = ""):
+    def _update_progress_from_records(self):
+        """Updates overall session progress label and progress bar based on initial total vs remaining students."""
+        total = max(0, getattr(self, 'initial_total_count', 0))
+        remaining = len(self.student_ids) if hasattr(self, 'student_ids') else 0
+
+        if total < remaining:
+            total = remaining
+            self.initial_total_count = total
+
+        completed = max(0, total - remaining)
+        pct = (completed / total) * 100.0 if total > 0 else 0.0
+
+        if hasattr(self, 'lbl_prog_stats'):
+            self.lbl_prog_stats.config(text=f"Progress: {completed} / {total} ({pct:.1f}%)")
+        if hasattr(self, 'progress_bar'):
+            self.progress_bar['value'] = pct
+
+    def _update_progress_ui(self, student_id: str, eta_str: str = ""):
         def _upd():
             self.lbl_curr_student.config(text=f"Current Student: {student_id}")
-            pct = (current / total) * 100
-            self.lbl_prog_stats.config(text=f"Progress: {current} / {total} ({pct:.1f}%)")
-            self.progress_bar['value'] = pct
+            self._update_progress_from_records()
             self.lbl_status.config(text=f"Status: Processing {student_id}...")
             if eta_str:
                 self.lbl_eta.config(text=eta_str)
