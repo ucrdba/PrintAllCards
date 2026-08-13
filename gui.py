@@ -75,6 +75,18 @@ class AppGUI:
         self.lbl_found_count = ttk.Label(excel_frame, text="0 PHOTOGRAPHED STUDENTS FOUND", font=("Arial", 9, "bold"), foreground="#0066cc")
         self.lbl_found_count.pack(anchor=tk.W, pady=5)
 
+        # Quick Search / Filter Bar for Student List
+        filter_box = ttk.Frame(excel_frame)
+        filter_box.pack(fill=tk.X, pady=(0, 4))
+
+        ttk.Label(filter_box, text="🔍 Search (ID / Name):", font=("Arial", 9, "bold")).pack(side=tk.LEFT, padx=(0, 4))
+        self.ent_filter_list = ttk.Entry(filter_box)
+        self.ent_filter_list.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        self.ent_filter_list.bind("<KeyRelease>", lambda e: self._on_filter_list_changed())
+
+        btn_clear_filter = ttk.Button(filter_box, text="Clear", width=6, command=self._clear_list_filter)
+        btn_clear_filter.pack(side=tk.RIGHT)
+
         # Student Treeview Table (Sortable Columns)
         tree_frame = ttk.Frame(excel_frame)
         tree_frame.pack(fill=tk.BOTH, expand=True, pady=2)
@@ -108,6 +120,9 @@ class AppGUI:
 
         btn_remove_student = ttk.Button(export_btn_box, text="🗑️ Remove Selected", command=self._remove_selected_student)
         btn_remove_student.pack(side=tk.LEFT, padx=2)
+
+        btn_remove_prior = ttk.Button(export_btn_box, text="✂️ Delete Prior", command=self._remove_prior_students)
+        btn_remove_prior.pack(side=tk.LEFT, padx=2)
 
         btn_save_list = ttk.Button(export_btn_box, text="Save Remaining List", command=self._save_remaining_list)
         btn_save_list.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
@@ -227,6 +242,22 @@ class AppGUI:
         self.btn_stop = tk.Button(ctrl_box, text="STOP", bg="#dc3545", fg="white", font=("Arial", 11, "bold"), command=self._stop_automation)
         self.btn_stop.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=5)
 
+        # Pause after N cards row (placed under PAUSE button)
+        pause_cfg_row = ttk.Frame(control_frame)
+        pause_cfg_row.pack(fill=tk.X, pady=(6, 2))
+
+        pause_inner = ttk.Frame(pause_cfg_row)
+        pause_inner.pack(anchor=tk.CENTER)
+
+        ttk.Label(pause_inner, text="Pause after every", font=("Arial", 9)).pack(side=tk.LEFT, padx=(0, 4))
+        self.ent_pause_after = ttk.Entry(pause_inner, width=5, justify="center", font=("Arial", 9, "bold"))
+        self.ent_pause_after.pack(side=tk.LEFT, padx=2)
+        self.ent_pause_after.bind("<KeyRelease>", lambda e: self._on_pause_setting_changed())
+        ttk.Label(pause_inner, text="cards", font=("Arial", 9)).pack(side=tk.LEFT, padx=(4, 4))
+
+        self.lbl_pause_countdown = ttk.Label(pause_inner, text="(No Auto-Pause)", font=("Arial", 9, "bold"), foreground="gray")
+        self.lbl_pause_countdown.pack(side=tk.LEFT, padx=(4, 0))
+
         # Emergency Stop Banner
         lbl_emerg = ttk.Label(control_frame, text="Emergency stop hotkey: Press the ESC key anytime or move mouse to upper-left corner.", foreground="#cc0000", font=("Arial", 9, "italic"))
         lbl_emerg.pack(pady=(5, 0))
@@ -277,10 +308,39 @@ class AppGUI:
         self.ent_delay_wait.insert(0, str(self.config.max_search_wait))
         self.ent_delay_print.insert(0, str(self.config.print_delay))
         self.ent_delay_between.insert(0, str(self.config.between_student_delay))
-        self.ent_print_hotkey.insert(0, str(self.config.print_hotkey))
+        pause_val = getattr(self.config, 'pause_after_cards', 0)
+        self.ent_pause_after.insert(0, str(pause_val))
+        self._update_pause_countdown(pause_val)
 
         if self.config.last_excel_path and os.path.exists(self.config.last_excel_path):
             self._load_excel_file(self.config.last_excel_path)
+
+    def _on_pause_setting_changed(self):
+        """Called when user edits the pause after cards entry box."""
+        try:
+            val_str = self.ent_pause_after.get().strip()
+            val = int(val_str) if val_str else 0
+            self._update_pause_countdown(val)
+        except ValueError:
+            pass
+
+    def _update_pause_countdown(self, remaining: int):
+        """Updates the live pause countdown label in the CONTROL section."""
+        if not hasattr(self, 'lbl_pause_countdown'):
+            return
+
+        try:
+            val_str = self.ent_pause_after.get().strip()
+            pause_limit = int(val_str) if val_str else 0
+        except ValueError:
+            pause_limit = getattr(self.config, 'pause_after_cards', 0)
+
+        if pause_limit <= 0:
+            self.lbl_pause_countdown.config(text="(No Auto-Pause / 0 = All)", foreground="gray")
+        elif remaining == 0:
+            self.lbl_pause_countdown.config(text="(Remaining: 0 - PAUSED)", foreground="#cc6600")
+        else:
+            self.lbl_pause_countdown.config(text=f"(Remaining: {remaining})", foreground="#0066cc")
 
     def _clear_all_fields(self):
         """Clears all text entry fields in the GUI."""
@@ -294,6 +354,9 @@ class AppGUI:
         self.ent_delay_print.delete(0, tk.END)
         self.ent_delay_between.delete(0, tk.END)
         self.ent_print_hotkey.delete(0, tk.END)
+        self.ent_pause_after.delete(0, tk.END)
+        self.ent_pause_after.insert(0, "0")
+        self._update_pause_countdown(0)
         self.logger.log("Cleared all configuration input fields.")
 
     def _save_ui_to_config(self) -> bool:
@@ -308,6 +371,7 @@ class AppGUI:
             d_print = self.ent_delay_print.get().strip()
             d_between = self.ent_delay_between.get().strip()
             p_hk = self.ent_print_hotkey.get().strip()
+            p_after = self.ent_pause_after.get().strip()
 
             self.config.search_x = int(sx) if sx else 0
             self.config.search_y = int(sy) if sy else 0
@@ -319,13 +383,14 @@ class AppGUI:
             self.config.print_delay = float(d_print) if d_print else 2.0
             self.config.between_student_delay = float(d_between) if d_between else 0.5
             self.config.print_hotkey = p_hk if p_hk else "ctrl+p"
+            self.config.pause_after_cards = int(p_after) if p_after else 0
             self.config.require_verification = self.var_require_verification.get()
             self.config.enable_mouse_trail = self.var_mouse_trail.get()
             self.config.dry_run = self.var_dry_run.get()
 
             # Validation
-            if self.config.search_start_delay < 0 or self.config.max_search_wait < 0 or self.config.print_delay < 0 or self.config.between_student_delay < 0:
-                raise ValueError("Delays must be non-negative.")
+            if self.config.search_start_delay < 0 or self.config.max_search_wait < 0 or self.config.print_delay < 0 or self.config.between_student_delay < 0 or self.config.pause_after_cards < 0:
+                raise ValueError("Delays and pause limits must be non-negative.")
 
             self.config.save()
             return True
@@ -377,15 +442,58 @@ class AppGUI:
 
         self._refresh_treeview_from_records()
 
+    def _clear_list_filter(self):
+        """Clears the student list search filter entry."""
+        if hasattr(self, 'ent_filter_list'):
+            self.ent_filter_list.delete(0, tk.END)
+        self.student_tree.selection_remove(self.student_tree.selection())
+
+    def _on_filter_list_changed(self):
+        """Searches for matching student ID, first name, last name, or grade in the full list and scrolls to highlight it without hiding other rows."""
+        if not hasattr(self, 'ent_filter_list'):
+            return
+
+        raw_query = self.ent_filter_list.get().strip().lower()
+        if not raw_query:
+            return
+
+        # Clean query terms (split by whitespace, remove commas/punctuation)
+        query_terms = [term.strip(',;.') for term in raw_query.split() if term.strip(',;.')]
+        if not query_terms:
+            return
+
+        # Find first matching student record and select/scroll to it
+        for r in self.student_records:
+            sid = str(r.get('id', '')).lower()
+            fn = str(r.get('first_name', '')).lower()
+            ln = str(r.get('last_name', '')).lower()
+            gr = str(r.get('grade', '')).lower()
+
+            full_searchable = f"{sid} {fn} {ln} {ln}, {fn} {fn} {ln} gr:{gr}".lower()
+
+            # Check if all query terms match somewhere in the student's fields
+            if all(term in full_searchable for term in query_terms):
+                if self.student_tree.exists(r['id']):
+                    self.student_tree.selection_set(r['id'])
+                    self.student_tree.focus(r['id'])
+                    self.student_tree.see(r['id'])
+                break
+
     def _refresh_treeview_from_records(self):
-        """Refreshes Treeview items and syncs student_ids list from student_records."""
+        """Refreshes Treeview items displaying all loaded student records."""
         for row in self.student_tree.get_children():
             self.student_tree.delete(row)
 
         self.student_ids = []
         for r in self.student_records:
-            self.student_ids.append(r['id'])
-            self.student_tree.insert("", tk.END, iid=r['id'], values=(r['id'], r['first_name'], r['last_name'], r['grade']))
+            sid = r['id']
+            self.student_ids.append(sid)
+            self.student_tree.insert("", tk.END, iid=sid, values=(sid, r['first_name'], r['last_name'], r['grade']))
+
+        if hasattr(self, 'ent_filter_list'):
+            query = self.ent_filter_list.get().strip().lower()
+            if query:
+                self._on_filter_list_changed()
 
     def _load_sync_zip_file(self, file_path: str):
         self.lbl_file_path.config(text=os.path.basename(file_path))
@@ -491,6 +599,49 @@ class AppGUI:
             pyperclip.copy(item_id)
             self.logger.log(f"Copied Student ID '{item_id}' to clipboard.")
             self.lbl_status.config(text=f"Status: Copied Student ID '{item_id}' to clipboard")
+
+    def _remove_prior_students(self):
+        """Removes all students preceding (or up to) the currently selected student in the list."""
+        selected = self.student_tree.selection()
+        if not selected:
+            messagebox.showinfo("Select Student", "Please select a student in the list first (e.g. the last successfully printed student ID).")
+            return
+
+        target_id = selected[0]
+        if target_id not in self.student_ids:
+            return
+
+        idx = self.student_ids.index(target_id)
+        if idx == 0:
+            if messagebox.askyesno("Remove Student", f"Student '{target_id}' is already at the top of the list.\nDo you want to remove this student?"):
+                self._remove_selected_student()
+            return
+
+        msg = (
+            f"Selected Student ID: {target_id} (Item #{idx + 1} of {len(self.student_ids)})\n\n"
+            f"Would you like to remove all {idx + 1} students up to and including '{target_id}'?\n\n"
+            f"• Click YES to remove all students up to '{target_id}' (the next student will become #1).\n"
+            f"• Click NO to remove only the {idx} students BEFORE '{target_id}' (so '{target_id}' becomes #1)."
+        )
+        choice = messagebox.askyesnocancel("Remove Prior Students", msg)
+        if choice is None:
+            return
+
+        remove_count = idx + 1 if choice else idx
+        removed_ids = self.student_ids[:remove_count]
+
+        # Update student_tree, student_records, student_ids
+        rem_set = set(removed_ids)
+        for item_id in removed_ids:
+            if self.student_tree.exists(item_id):
+                self.student_tree.delete(item_id)
+
+        self.student_records = [r for r in self.student_records if r['id'] not in rem_set]
+        self.student_ids = [sid for sid in self.student_ids if sid not in rem_set]
+
+        count = len(self.student_ids)
+        self.lbl_found_count.config(text=f"{count} PHOTOGRAPHED STUDENTS REMAINING", foreground="#0066cc")
+        self.logger.log(f"Removed {len(removed_ids)} prior student ID(s) up to {target_id}.")
 
     def _pop_student(self, student_id: str):
         """Removes a processed student from student_records, student_ids, and Treeview UI synchronously in memory."""
@@ -652,6 +803,9 @@ class AppGUI:
             self.btn_pause.config(text="PAUSE", bg="#ffc107")
             self.lbl_status.config(text="Status: Resuming...")
             self.logger.log("Automation RESUMED")
+            pause_limit = getattr(self.config, 'pause_after_cards', 0)
+            if pause_limit > 0:
+                self._update_pause_countdown(pause_limit)
 
     def _stop_automation(self):
         if not self.is_processing:
@@ -662,11 +816,20 @@ class AppGUI:
         self.logger.log("STOP requested by user.")
         self.lbl_status.config(text="Status: Stopping...")
 
+    def _trigger_auto_pause(self, limit: int):
+        """Updates GUI pause button and status on main thread when card batch limit is reached."""
+        if self.automation.pause_event.is_set():
+            self.automation.pause_event.clear()
+            self.btn_pause.config(text="RESUME", bg="#17a2b8")
+            self.lbl_status.config(text=f"Status: AUTO-PAUSED (Processed batch of {limit} cards)", foreground="#003366")
+            self._update_pause_countdown(0)
+
     def _run_automation_loop(self):
         total = len(self.student_ids)
         printed = 0
         skipped = 0
         errors = 0
+        batch_counter = 0
         start_time = time.time()
 
         while self.student_ids:
@@ -675,6 +838,11 @@ class AppGUI:
 
             sid = self.student_ids[0]
             processed_count = printed + skipped + errors + 1
+            pause_limit = getattr(self.config, 'pause_after_cards', 0)
+            
+            if pause_limit > 0:
+                rem_pause = max(0, pause_limit - batch_counter)
+                self.root.after(0, lambda r=rem_pause: self._update_pause_countdown(r))
             
             # Compute average time per card and ETA after 5 cards processed
             eta_str = "Calculating ETA..."
@@ -702,7 +870,21 @@ class AppGUI:
 
             if success:
                 printed += 1
+                batch_counter += 1
                 self._pop_student(sid)
+
+                # Check auto-pause condition
+                if pause_limit > 0:
+                    rem_pause = max(0, pause_limit - batch_counter)
+                    self.root.after(0, lambda r=rem_pause: self._update_pause_countdown(r))
+
+                    if batch_counter >= pause_limit and self.student_ids:
+                        batch_counter = 0
+                        self.logger.log(f"AUTO-PAUSED: Batch limit of {pause_limit} cards reached. Click RESUME to continue.")
+                        self.root.after(0, lambda _l=pause_limit: self._trigger_auto_pause(_l))
+                        if not self.automation.wait_if_paused_or_stopped():
+                            break
+                        self.root.after(0, lambda _l=pause_limit: self._update_pause_countdown(_l))
             else:
                 if self.automation.stop_event.is_set():
                     self.logger.log(f"Batch stopped on student {sid}")

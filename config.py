@@ -17,6 +17,7 @@ class AppConfig:
     enable_mouse_trail: bool = True
     print_hotkey: str = "ctrl+p"
     dry_run: bool = False
+    pause_after_cards: int = 0
     last_excel_path: str = ""
 
     @classmethod
