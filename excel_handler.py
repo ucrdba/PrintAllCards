@@ -93,15 +93,22 @@ class ExcelHandler:
                         if gr:
                             meta_str += f" | Gr: {gr}"
 
-                        photographed_items.append((clean_id, meta_str))
+                        photographed_items.append({
+                            'id': clean_id,
+                            'first_name': fn,
+                            'last_name': ln,
+                            'grade': gr,
+                            'meta_str': meta_str
+                        })
 
             # Remove duplicates preserving order
             seen = set()
             unique_items = []
-            for clean_id, meta_str in photographed_items:
-                if clean_id not in seen:
-                    seen.add(clean_id)
-                    unique_items.append((clean_id, meta_str))
+            for item in photographed_items:
+                cid = item['id']
+                if cid not in seen:
+                    seen.add(cid)
+                    unique_items.append(item)
 
             if not unique_items:
                 return [], "No rows found matching status = 'PHOTOGRAPHED'."
@@ -238,7 +245,13 @@ class ExcelHandler:
                         if gr:
                             meta_str += f" | Gr: {gr}"
 
-                        photographed_items.append((clean_id, meta_str))
+                        photographed_items.append({
+                            'id': clean_id,
+                            'first_name': fn,
+                            'last_name': ln,
+                            'grade': gr,
+                            'meta_str': meta_str
+                        })
 
             if not photographed_items:
                 return [], "No photographed students found (photos array is empty in index.json)."

@@ -270,8 +270,13 @@ class AutomationController:
 
         if self.config.dry_run:
             self.logger.log(f"[DRY RUN] Would trigger Print action at ({print_x}, {print_y})")
-            if self.config.enable_mouse_trail and print_x > 0:
-                pyautogui.moveTo(print_x, print_y, duration=0.3, tween=pyautogui.easeOutQuad)
+            if print_x > 0 and print_y > 0:
+                if self.config.enable_mouse_trail:
+                    pyautogui.moveTo(print_x, print_y, duration=0.3, tween=pyautogui.easeOutQuad)
+                else:
+                    pyautogui.moveTo(print_x, print_y)
+            if not self.safe_sleep(self.config.print_delay):
+                return False, "Interrupted during print delay"
         else:
             if print_x > 0 and print_y > 0:
                 self.logger.log(f"Clicking Electron Print button at ({print_x}, {print_y})")

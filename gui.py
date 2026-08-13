@@ -74,16 +74,32 @@ class AppGUI:
         self.lbl_found_count = ttk.Label(excel_frame, text="0 PHOTOGRAPHED STUDENTS FOUND", font=("Arial", 9, "bold"), foreground="#0066cc")
         self.lbl_found_count.pack(anchor=tk.W, pady=5)
 
-        # Student Listbox
-        list_frame = ttk.Frame(excel_frame)
-        list_frame.pack(fill=tk.BOTH, expand=True, pady=2)
+        # Student Treeview Table (Sortable Columns)
+        tree_frame = ttk.Frame(excel_frame)
+        tree_frame.pack(fill=tk.BOTH, expand=True, pady=2)
 
-        self.student_listbox = tk.Listbox(list_frame, height=12, selectmode=tk.EXTENDED, font=("Consolas", 10))
-        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.student_listbox.yview)
-        self.student_listbox.config(yscrollcommand=scrollbar.set)
+        columns = ("id", "first_name", "last_name", "grade")
+        self.student_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=10, selectmode="extended")
         
-        self.student_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.student_tree.heading("id", text="Student ID ↕", command=lambda: self._sort_treeview("id", False))
+        self.student_tree.heading("first_name", text="First Name ↕", command=lambda: self._sort_treeview("first_name", False))
+        self.student_tree.heading("last_name", text="Last Name ↕", command=lambda: self._sort_treeview("last_name", False))
+        self.student_tree.heading("grade", text="Grade ↕", command=lambda: self._sort_treeview("grade", False))
+
+        self.student_tree.column("id", width=110, minwidth=80)
+        self.student_tree.column("first_name", width=120, minwidth=80)
+        self.student_tree.column("last_name", width=120, minwidth=80)
+        self.student_tree.column("grade", width=60, minwidth=40)
+
+        scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.student_tree.yview)
+        self.student_tree.config(yscrollcommand=scrollbar.set)
+        
+        self.student_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Track sorting states
+        self.sort_reverse = {"id": False, "first_name": False, "last_name": False, "grade": False}
+        self.student_records: List[dict] = []
 
         # Save / Load remaining student list buttons
         export_btn_box = ttk.Frame(excel_frame)
@@ -98,9 +114,12 @@ class AppGUI:
         btn_load_list = ttk.Button(export_btn_box, text="Load Saved List", command=self._load_saved_list)
         btn_load_list.pack(side=tk.RIGHT, expand=True, fill=tk.X, padx=2)
 
-        # Bind Delete / Backspace keys to listbox for quick removal
-        self.student_listbox.bind("<Delete>", lambda e: self._remove_selected_student())
-        self.student_listbox.bind("<BackSpace>", lambda e: self._remove_selected_student())
+        # Bind Delete / Backspace keys to Treeview for quick removal
+        self.student_tree.bind("<Delete>", lambda e: self._remove_selected_student())
+        self.student_tree.bind("<BackSpace>", lambda e: self._remove_selected_student())
+
+        # Backward-compatibility alias
+        self.student_listbox = self.student_tree
 
         # --- SECTION 2: AUTOMATION LOCATIONS ---
         loc_frame = ttk.LabelFrame(right_pane, text="AUTOMATION LOCATIONS", padding="8")
@@ -327,20 +346,61 @@ class AppGUI:
         if file_path:
             self._load_sync_zip_file(file_path)
 
+    def _sort_treeview(self, col: str, reverse: bool):
+        """Sorts the student Treeview by the clicked column header (ascending/descending)."""
+        def _sort_key(item):
+            val = item.get(col, '')
+            if col == "grade":
+                try:
+                    return (0, float(val))
+                except ValueError:
+                    return (1, str(val).lower())
+            return str(val).lower()
+
+        self.student_records.sort(key=_sort_key, reverse=reverse)
+        self.sort_reverse[col] = not reverse
+
+        # Update column header indicator
+        arrow = " ▲" if reverse else " ▼"
+        header_labels = {
+            "id": "Student ID",
+            "first_name": "First Name",
+            "last_name": "Last Name",
+            "grade": "Grade"
+        }
+        for c in ("id", "first_name", "last_name", "grade"):
+            lbl = header_labels[c] + (arrow if c == col else " ↕")
+            self.student_tree.heading(c, text=lbl, command=lambda _c=c, _r=self.sort_reverse[c]: self._sort_treeview(_c, _r))
+
+        self._refresh_treeview_from_records()
+
+    def _refresh_treeview_from_records(self):
+        """Refreshes Treeview items and syncs student_ids list from student_records."""
+        for row in self.student_tree.get_children():
+            self.student_tree.delete(row)
+
+        self.student_ids = []
+        for r in self.student_records:
+            self.student_ids.append(r['id'])
+            self.student_tree.insert("", tk.END, iid=r['id'], values=(r['id'], r['first_name'], r['last_name'], r['grade']))
+
     def _load_sync_zip_file(self, file_path: str):
         self.lbl_file_path.config(text=os.path.basename(file_path))
-        items, err = ExcelHandler.load_sync_zip(file_path)
+        records, err = ExcelHandler.load_sync_zip(file_path)
 
-        self.student_listbox.delete(0, tk.END)
+        for row in self.student_tree.get_children():
+            self.student_tree.delete(row)
+
         if err:
+            self.student_records = []
+            self.student_ids = []
             self.lbl_found_count.config(text="0 PHOTOGRAPHED STUDENTS FOUND", foreground="red")
             self.logger.error(err)
             messagebox.showerror("Sync Zip Error", err)
             return
 
-        self.student_ids = [clean_id for clean_id, _ in items]
-        for _, meta_str in items:
-            self.student_listbox.insert(tk.END, meta_str)
+        self.student_records = records
+        self._refresh_treeview_from_records()
 
         count = len(self.student_ids)
         self.lbl_found_count.config(text=f"{count} PHOTOGRAPHED STUDENTS FOUND", foreground="#0066cc")
@@ -381,16 +441,14 @@ class AppGUI:
             filetypes=[("Student List Files", "*.csv *.xlsx *.xls"), ("All Files", "*.*")]
         )
         if file_path:
-            items, err = ExcelHandler.load_student_list(file_path)
+            records, err = ExcelHandler.load_student_list(file_path)
             if err:
                 self.logger.error(err)
                 messagebox.showerror("Load Error", err)
                 return
 
-            self.student_ids = [clean_id for clean_id, _ in items]
-            self.student_listbox.delete(0, tk.END)
-            for _, meta_str in items:
-                self.student_listbox.insert(tk.END, meta_str)
+            self.student_records = records
+            self._refresh_treeview_from_records()
 
             count = len(self.student_ids)
             self.lbl_file_path.config(text=os.path.basename(file_path))
@@ -399,37 +457,59 @@ class AppGUI:
 
     def _remove_selected_student(self):
         """Removes all currently selected student IDs from the listbox and queue."""
-        selected_indices = self.student_listbox.curselection()
-        if not selected_indices:
+        selected_items = self.student_tree.selection()
+        if not selected_items:
             messagebox.showinfo("Select Student", "Please select one or more students from the list to remove.")
             return
 
         removed_ids = []
-        # Delete in reverse order so indices remain valid
-        for idx in sorted(selected_indices, reverse=True):
-            removed_id = self.student_ids.pop(idx)
-            self.student_listbox.delete(idx)
-            removed_ids.append(removed_id)
+        for item_id in selected_items:
+            self.student_tree.delete(item_id)
+            removed_ids.append(item_id)
+
+        # Update student_records and student_ids
+        rem_set = set(removed_ids)
+        self.student_records = [r for r in self.student_records if r['id'] not in rem_set]
+        self.student_ids = [sid for sid in self.student_ids if sid not in rem_set]
 
         # Update remaining count label
         count = len(self.student_ids)
         self.lbl_found_count.config(text=f"{count} PHOTOGRAPHED STUDENTS REMAINING", foreground="#0066cc")
-        self.logger.log(f"Removed {len(removed_ids)} student ID(s) from list: {', '.join(reversed(removed_ids))}")
+        self.logger.log(f"Removed {len(removed_ids)} student ID(s) from list: {', '.join(removed_ids)}")
+
+    def _pop_student(self, student_id: str):
+        """Removes a processed student from student_records, student_ids, and Treeview UI."""
+        def _do_pop():
+            if self.student_tree.exists(student_id):
+                self.student_tree.delete(student_id)
+            if self.student_ids and self.student_ids[0] == student_id:
+                self.student_ids.pop(0)
+            elif student_id in self.student_ids:
+                self.student_ids.remove(student_id)
+            self.student_records = [r for r in self.student_records if r['id'] != student_id]
+
+            count = len(self.student_ids)
+            self.lbl_found_count.config(text=f"{count} PHOTOGRAPHED STUDENTS REMAINING", foreground="#0066cc")
+
+        self.root.after(0, _do_pop)
 
     def _load_excel_file(self, file_path: str):
         self.lbl_file_path.config(text=os.path.basename(file_path))
-        items, err = ExcelHandler.load_photographed_students(file_path)
+        records, err = ExcelHandler.load_photographed_students(file_path)
         
-        self.student_listbox.delete(0, tk.END)
+        for row in self.student_tree.get_children():
+            self.student_tree.delete(row)
+
         if err:
+            self.student_records = []
+            self.student_ids = []
             self.lbl_found_count.config(text="0 PHOTOGRAPHED STUDENTS FOUND", foreground="red")
             self.logger.error(err)
             messagebox.showerror("Excel Error", err)
             return
 
-        self.student_ids = [clean_id for clean_id, _ in items]
-        for _, meta_str in items:
-            self.student_listbox.insert(tk.END, meta_str)
+        self.student_records = records
+        self._refresh_treeview_from_records()
 
         count = len(self.student_ids)
         self.lbl_found_count.config(text=f"{count} PHOTOGRAPHED STUDENTS FOUND", foreground="#0066cc")
@@ -607,8 +687,7 @@ class AppGUI:
 
             if success:
                 printed += 1
-                self.student_ids.pop(0)
-                self.root.after(0, lambda: self.student_listbox.delete(0))
+                self._pop_student(sid)
             else:
                 if self.automation.stop_event.is_set():
                     self.logger.log(f"Batch stopped on student {sid}")
@@ -624,17 +703,14 @@ class AppGUI:
                     retry_success, retry_msg = self.automation.process_single_student(sid)
                     if retry_success:
                         printed += 1
-                        self.student_ids.pop(0)
-                        self.root.after(0, lambda: self.student_listbox.delete(0))
+                        self._pop_student(sid)
                     else:
                         errors += 1
-                        self.student_ids.pop(0)
-                        self.root.after(0, lambda: self.student_listbox.delete(0))
+                        self._pop_student(sid)
                 elif user_choice == "skip":
                     self.logger.log(f"User chose SKIP for student {sid}")
                     skipped += 1
-                    self.student_ids.pop(0)
-                    self.root.after(0, lambda: self.student_listbox.delete(0))
+                    self._pop_student(sid)
                 else:  # stop
                     self.logger.log(f"User chose STOP on student {sid}")
                     self.automation.stop_event.set()
