@@ -478,20 +478,20 @@ class AppGUI:
         self.logger.log(f"Removed {len(removed_ids)} student ID(s) from list: {', '.join(removed_ids)}")
 
     def _pop_student(self, student_id: str):
-        """Removes a processed student from student_records, student_ids, and Treeview UI."""
-        def _do_pop():
+        """Removes a processed student from student_records, student_ids, and Treeview UI synchronously in memory."""
+        if self.student_ids and self.student_ids[0] == student_id:
+            self.student_ids.pop(0)
+        elif student_id in self.student_ids:
+            self.student_ids.remove(student_id)
+        self.student_records = [r for r in self.student_records if r['id'] != student_id]
+
+        def _do_ui_pop():
             if self.student_tree.exists(student_id):
                 self.student_tree.delete(student_id)
-            if self.student_ids and self.student_ids[0] == student_id:
-                self.student_ids.pop(0)
-            elif student_id in self.student_ids:
-                self.student_ids.remove(student_id)
-            self.student_records = [r for r in self.student_records if r['id'] != student_id]
-
             count = len(self.student_ids)
             self.lbl_found_count.config(text=f"{count} PHOTOGRAPHED STUDENTS REMAINING", foreground="#0066cc")
 
-        self.root.after(0, _do_pop)
+        self.root.after(0, _do_ui_pop)
 
     def _load_excel_file(self, file_path: str):
         self.lbl_file_path.config(text=os.path.basename(file_path))
