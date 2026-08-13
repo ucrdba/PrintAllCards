@@ -45,8 +45,6 @@ class ExcelHandler:
             
             if not student_id_col:
                 return [], f"Missing required column 'studentId' in file."
-            if not status_col:
-                return [], f"Missing required column 'status' in file."
 
             dtypes = {student_id_col: str}
             if first_name_col: dtypes[first_name_col] = str
@@ -66,16 +64,16 @@ class ExcelHandler:
             cls._current_df = df.copy()
             cls._student_id_col_name = student_id_col
 
-            # Filter rows where status is PHOTOGRAPHED
+            # Filter rows where status is PHOTOGRAPHED (or include all if status column absent)
             photographed_items = []
             for _, row in df.iterrows():
                 raw_id = row[student_id_col]
-                raw_status = row[status_col]
+                raw_status = row[status_col] if status_col else "PHOTOGRAPHED"
 
-                if pd.isna(raw_id) or pd.isna(raw_status):
+                if pd.isna(raw_id) or (status_col and pd.isna(raw_status)):
                     continue
 
-                status_str = str(raw_status).strip().upper()
+                status_str = str(raw_status).strip().upper() if status_col else "PHOTOGRAPHED"
                 if status_str == "PHOTOGRAPHED":
                     clean_id = str(raw_id).strip()
                     if clean_id.endswith('.0'):
@@ -119,46 +117,119 @@ class ExcelHandler:
             return [], f"Error processing Excel file: {str(e)}"
 
     @classmethod
-    def export_remaining_students(cls, remaining_ids: List[str], export_path: str) -> Tuple[bool, str]:
+    def export_remaining_students(cls, remaining_ids: List[str], export_path: str, remaining_records: List[dict] = None) -> Tuple[bool, str]:
         """
         Exports all original columns and rows from the loaded spreadsheet matching
         the remaining unprinted student IDs to a CSV or Excel file.
         """
         try:
-            if cls._current_df is None or cls._student_id_col_name not in cls._current_df.columns:
-                # Fallback if no full original dataframe is cached
-                df_export = pd.DataFrame({"studentId": [str(sid) for sid in remaining_ids]})
-            else:
-                # Convert student ID column to string to match remaining_ids
-                id_col = cls._student_id_col_name
-                temp_series = cls._current_df[id_col].astype(str).str.strip().str.replace(r'\.0$', '', regex=True)
-                
-                # Filter original dataframe preserving all original columns
-                rem_set = set(remaining_ids)
-                mask = temp_series.isin(rem_set)
-                df_export = cls._current_df[mask].copy()
+            if not remaining_ids:
+                return False, "No remaining student IDs provided."
 
-            if export_path.endswith('.csv'):
+            rows_to_export = []
+
+            # If we have a cached original DataFrame and the student ID column exists
+            if cls._current_df is not None and cls._student_id_col_name in cls._current_df.columns:
+                id_col = cls._student_id_col_name
+                
+                # Build lookup mapping clean student ID -> list of row dicts from _current_df
+                # Preserving all original columns
+                df_dict = cls._current_df.to_dict('records')
+                id_to_rows = {}
+                for row in df_dict:
+                    val = row.get(id_col, '')
+                    if pd.isna(val):
+                        continue
+                    clean_id = str(val).strip()
+                    if clean_id.endswith('.0'):
+                        clean_id = clean_id[:-2]
+                    if clean_id:
+                        if clean_id not in id_to_rows:
+                            id_to_rows[clean_id] = []
+                        id_to_rows[clean_id].append(row)
+
+                # Build record lookup from remaining_records if provided
+                rec_dict = {}
+                if remaining_records:
+                    for rec in remaining_records:
+                        rid = rec.get('id', '')
+                        if rid:
+                            rec_dict[rid] = rec
+
+                for sid in remaining_ids:
+                    clean_sid = str(sid).strip()
+                    if clean_sid.endswith('.0'):
+                        clean_sid = clean_sid[:-2]
+
+                    if clean_sid in id_to_rows and id_to_rows[clean_sid]:
+                        # Take matching original row to preserve all original columns
+                        rows_to_export.append(dict(id_to_rows[clean_sid].pop(0)))
+                    elif clean_sid in rec_dict:
+                        rec = rec_dict[clean_sid]
+                        rows_to_export.append({
+                            id_col: clean_sid,
+                            'firstName': rec.get('first_name', ''),
+                            'lastName': rec.get('last_name', ''),
+                            'grade': rec.get('grade', ''),
+                            'status': 'PHOTOGRAPHED'
+                        })
+                    else:
+                        rows_to_export.append({
+                            id_col: clean_sid,
+                            'status': 'PHOTOGRAPHED'
+                        })
+            else:
+                # Fallback when _current_df is None
+                rec_dict = {}
+                if remaining_records:
+                    for rec in remaining_records:
+                        rid = rec.get('id', '')
+                        if rid:
+                            rec_dict[rid] = rec
+
+                for sid in remaining_ids:
+                    clean_sid = str(sid).strip()
+                    if clean_sid.endswith('.0'):
+                        clean_sid = clean_sid[:-2]
+                    if clean_sid in rec_dict:
+                        rec = rec_dict[clean_sid]
+                        rows_to_export.append({
+                            'studentId': clean_sid,
+                            'firstName': rec.get('first_name', ''),
+                            'lastName': rec.get('last_name', ''),
+                            'grade': rec.get('grade', ''),
+                            'status': 'PHOTOGRAPHED'
+                        })
+                    else:
+                        rows_to_export.append({
+                            'studentId': clean_sid,
+                            'status': 'PHOTOGRAPHED'
+                        })
+
+            df_export = pd.DataFrame(rows_to_export)
+
+            if export_path.lower().endswith('.csv'):
                 df_export.to_csv(export_path, index=False)
             else:
                 df_export.to_excel(export_path, index=False)
-            return True, f"Successfully saved {len(df_export)} remaining student record(s) with all columns to {export_path}"
+
+            return True, f"Successfully saved {len(df_export)} remaining student record(s) to {export_path}"
         except Exception as e:
             return False, f"Error saving remaining student records: {str(e)}"
 
     @classmethod
-    def load_student_list(cls, file_path: str) -> Tuple[List[str], str]:
+    def load_student_list(cls, file_path: str) -> Tuple[List[dict], str]:
         """
         Loads student list from a saved CSV or Excel file (which has all columns).
         """
         return cls.load_photographed_students(file_path)
 
     @classmethod
-    def load_sync_zip(cls, zip_path: str) -> Tuple[List[Tuple[str, str]], str]:
+    def load_sync_zip(cls, zip_path: str) -> Tuple[List[dict], str]:
         """
         Reads a sync .zip file containing index.json, idCards, and Photos.
         Parses index.json to find students who HAVE photos (photos array is not empty).
-        Returns (list_of_(clean_id, meta_str_display), error_message).
+        Returns (list_of_records, error_message).
         """
         import zipfile
         import json
@@ -256,7 +327,21 @@ class ExcelHandler:
             if not photographed_items:
                 return [], "No photographed students found (photos array is empty in index.json)."
 
+            # Update _current_df for sync zip load
+            df_sync = pd.DataFrame([
+                {
+                    'studentId': item['id'],
+                    'firstName': item['first_name'],
+                    'lastName': item['last_name'],
+                    'grade': item['grade'],
+                    'status': 'PHOTOGRAPHED'
+                } for item in photographed_items
+            ])
+            cls._current_df = df_sync
+            cls._student_id_col_name = 'studentId'
+
             return photographed_items, ""
 
         except Exception as e:
             return [], f"Error reading Sync Zip file: {str(e)}"
+
