@@ -145,3 +145,105 @@ class ExcelHandler:
         Loads student list from a saved CSV or Excel file (which has all columns).
         """
         return cls.load_photographed_students(file_path)
+
+    @classmethod
+    def load_sync_zip(cls, zip_path: str) -> Tuple[List[Tuple[str, str]], str]:
+        """
+        Reads a sync .zip file containing index.json, idCards, and Photos.
+        Parses index.json to find students who HAVE photos (photos array is not empty).
+        Returns (list_of_(clean_id, meta_str_display), error_message).
+        """
+        import zipfile
+        import json
+
+        try:
+            with zipfile.ZipFile(zip_path, 'r') as zf:
+                json_filename = None
+                for fname in zf.namelist():
+                    if fname.lower() == 'index.json' or fname.lower().endswith('/index.json'):
+                        json_filename = fname
+                        break
+
+                if not json_filename:
+                    return [], "Missing 'index.json' file inside the zip archive."
+
+                with zf.open(json_filename) as f:
+                    data = json.load(f)
+
+            students = []
+            photos_set = set()
+
+            if isinstance(data, dict):
+                students = data.get('students', data.get('Students', []))
+                raw_photos = data.get('photos', data.get('Photos', data.get('studentPhotos', data.get('student_photos', []))))
+                
+                # Collect all photo student IDs into photos_set
+                if isinstance(raw_photos, list):
+                    for item in raw_photos:
+                        if isinstance(item, dict):
+                            p_id = item.get('studentId', item.get('student_id', item.get('id', item.get('StudentId', ''))))
+                        else:
+                            p_id = str(item)
+                        if p_id:
+                            clean_p_id = str(p_id).strip()
+                            if clean_p_id.endswith('.0'):
+                                clean_p_id = clean_p_id[:-2]
+                            photos_set.add(clean_p_id)
+            elif isinstance(data, list):
+                students = data
+
+            photographed_items = []
+            seen = set()
+
+            for s in students:
+                if not isinstance(s, dict):
+                    continue
+
+                raw_id = s.get('studentId', s.get('student_id', s.get('id', s.get('StudentId', ''))))
+                if not raw_id:
+                    continue
+
+                clean_id = str(raw_id).strip()
+                if clean_id.endswith('.0'):
+                    clean_id = clean_id[:-2]
+
+                if not clean_id:
+                    continue
+
+                # Check if this student HAS a photo in the photos array
+                student_has_photo = clean_id in photos_set
+
+                # Also check student-level photo array / object / path if present
+                if not student_has_photo:
+                    s_photos = s.get('photos', s.get('Photos', s.get('studentPhotos', None)))
+                    if isinstance(s_photos, list) and len(s_photos) > 0:
+                        student_has_photo = True
+                    else:
+                        s_photo = s.get('photo', s.get('photoPath', s.get('hasPhoto', None)))
+                        if s_photo is True or (isinstance(s_photo, str) and s_photo.strip()):
+                            student_has_photo = True
+
+                # Include ONLY students that HAVE photographs
+                if student_has_photo:
+                    if clean_id not in seen:
+                        seen.add(clean_id)
+                        fn = str(s.get('firstName', s.get('first_name', s.get('FirstName', '')))).strip()
+                        ln = str(s.get('lastName', s.get('last_name', s.get('LastName', '')))).strip()
+                        gr = str(s.get('grade', s.get('Grade', ''))).strip()
+
+                        name_part = f"{fn} {ln}".strip()
+                        meta_str = clean_id
+                        if name_part:
+                            meta_str += f" | {name_part}"
+                        if gr:
+                            meta_str += f" | Gr: {gr}"
+
+                        photographed_items.append((clean_id, meta_str))
+
+            if not photographed_items:
+                return [], "No photographed students found (photos array is empty in index.json)."
+
+            return photographed_items, ""
+
+        except Exception as e:
+            return [], f"Error reading Sync Zip file: {str(e)}"

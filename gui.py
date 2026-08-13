@@ -62,6 +62,9 @@ class AppGUI:
         file_btn_frame = ttk.Frame(excel_frame)
         file_btn_frame.pack(fill=tk.X, pady=2)
         
+        self.btn_sync_zip = ttk.Button(file_btn_frame, text="Import Sync File", command=self._select_sync_zip_file)
+        self.btn_sync_zip.pack(side=tk.RIGHT, padx=2)
+
         self.btn_excel = ttk.Button(file_btn_frame, text="Select Excel File", command=self._select_excel_file)
         self.btn_excel.pack(side=tk.RIGHT, padx=2)
         
@@ -315,6 +318,33 @@ class AppGUI:
             self.txt_log.see(tk.END)
             self.txt_log.config(state=tk.DISABLED)
         self.root.after(0, _update)
+
+    def _select_sync_zip_file(self):
+        file_path = filedialog.askopenfilename(
+            title="Select Sync Zip File",
+            filetypes=[("Zip Archives", "*.zip"), ("All Files", "*.*")]
+        )
+        if file_path:
+            self._load_sync_zip_file(file_path)
+
+    def _load_sync_zip_file(self, file_path: str):
+        self.lbl_file_path.config(text=os.path.basename(file_path))
+        items, err = ExcelHandler.load_sync_zip(file_path)
+
+        self.student_listbox.delete(0, tk.END)
+        if err:
+            self.lbl_found_count.config(text="0 PHOTOGRAPHED STUDENTS FOUND", foreground="red")
+            self.logger.error(err)
+            messagebox.showerror("Sync Zip Error", err)
+            return
+
+        self.student_ids = [clean_id for clean_id, _ in items]
+        for _, meta_str in items:
+            self.student_listbox.insert(tk.END, meta_str)
+
+        count = len(self.student_ids)
+        self.lbl_found_count.config(text=f"{count} PHOTOGRAPHED STUDENTS FOUND", foreground="#0066cc")
+        self.logger.log(f"Imported Sync Zip: {os.path.basename(file_path)} ({count} photographed students loaded)")
 
     def _select_excel_file(self):
         file_path = filedialog.askopenfilename(
