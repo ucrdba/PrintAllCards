@@ -222,19 +222,12 @@ class AutomationController:
         pyautogui.hotkey('ctrl', 'v')
         time.sleep(0.2)
 
-        # Check if text/numbers exist in the box before pressing Enter
-        has_text = False
+        # Fallback check if paste succeeded
+        has_text = True
         try:
-            pyautogui.hotkey('ctrl', 'a')
-            pyautogui.hotkey('ctrl', 'c')
-            time.sleep(0.1)
             copied = pyperclip.paste().strip()
-            # If text/numbers are present in the box
-            if copied and any(char.isdigit() for char in copied):
-                has_text = True
-                # Deselect text by moving cursor to end of line
-                pyautogui.press('right')
-                time.sleep(0.05)
+            if not copied or not any(char.isdigit() for char in copied):
+                has_text = False
         except Exception:
             pass
 

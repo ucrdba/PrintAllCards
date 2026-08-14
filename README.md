@@ -39,8 +39,8 @@ python main.py
 
 ## Step-by-Step Operating Guide
 
-### 1. Select Excel File
-1. Click **Select Excel File**.
+### 1. Select Photographed List
+1. Click **Photographed List**.
 2. Choose your `.xlsx` or `.xls` spreadsheet containing `studentId` and `status` columns.
 3. The app will filter all rows where `status` is `PHOTOGRAPHED` and display the ID list and count.
 
@@ -52,8 +52,9 @@ python main.py
 ### 3. Configure Timing Options
 - **Search Start Delay**: Pause after clicking the search box before pasting ID (Default: `0.5s`).
 - **Maximum Search Wait**: Max wait time for search verification (Default: `15.0s`).
-- **Print Delay**: Wait time after clicking print (Default: `2.0s`).
-- **Between Student Delay**: Pause before starting next student (Default: `0.5s`).
+- **Print Delay**: Wait time after clicking print to allow physical spooling/duplex rendering (Default: `4.0s`).
+- **Between Student Delay**: Pause before starting next student (Default: `1.5s`).
+- **Load Default Values**: Click to reset/fill timing fields with recommended defaults optimized for card printers.
 
 ### 4. Using Dry Run Mode
 Check the **Dry Run** box to execute search box selection, clearing, pasting, and student verification without clicking the Print button.

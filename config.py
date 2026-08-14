@@ -11,14 +11,15 @@ class AppConfig:
     print_y: int = 0
     search_start_delay: float = 0.5
     max_search_wait: float = 15.0
-    print_delay: float = 2.0
-    between_student_delay: float = 0.5
+    print_delay: float = 4.0
+    between_student_delay: float = 1.5
     require_verification: bool = False
     enable_mouse_trail: bool = True
     print_hotkey: str = "ctrl+p"
     dry_run: bool = False
     pause_after_cards: int = 0
     last_excel_path: str = ""
+    selected_printer: str = "NullPrinter"
 
     @classmethod
     def get_config_path(cls) -> Path:

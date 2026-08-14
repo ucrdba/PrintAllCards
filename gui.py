@@ -8,10 +8,87 @@ from typing import List
 import pyautogui
 import pyperclip
 from pynput import mouse
+try:
+    import win32print
+except ImportError:
+    win32print = None
+
 from config import AppConfig
 from logger import AppLogger
 from excel_handler import ExcelHandler
 from automation import AutomationController
+
+
+class ThermometerGauge(tk.Canvas):
+    """Custom canvas-based vertical thermometer gauge to visualize print queue load."""
+    def __init__(self, parent, width=120, height=260, max_val=20, **kwargs):
+        super().__init__(parent, width=width, height=height, bg=kwargs.get('bg', '#f4f6f8'), highlightthickness=0)
+        self.width = width
+        self.height = height
+        self.max_val = max_val
+        self.current_val = 0
+        self.draw_gauge()
+
+    def set_value(self, val: int, max_val: int = None):
+        if max_val is not None and max_val > 0:
+            self.max_val = max_val
+        self.current_val = max(0, val)
+        self.draw_gauge()
+
+    def draw_gauge(self):
+        self.delete("all")
+        cx = self.width // 2 - 10
+        top_y = 35
+        bottom_y = self.height - 45
+        bulb_radius = 18
+        stem_width = 16
+
+        # Color gradient based on queue level
+        val = self.current_val
+        if val == 0:
+            fill_color = "#28a745"  # Green - Empty/Idle
+        elif val < 5:
+            fill_color = "#17a2b8"  # Teal - Light activity
+        elif val < 10:
+            fill_color = "#ffc107"  # Yellow/Gold - Moderate
+        elif val < 15:
+            fill_color = "#fd7e14"  # Orange - High load
+        else:
+            fill_color = "#dc3545"  # Red - Heavy queue load
+
+        # Stem background (glass tube)
+        stem_left = cx - stem_width // 2
+        stem_right = cx + stem_width // 2
+        self.create_rectangle(stem_left, top_y, stem_right, bottom_y, fill="#e9ecef", outline="#adb5bd", width=2)
+
+        # Bulb background & fill (bottom)
+        bulb_y = bottom_y + bulb_radius - 2
+        self.create_oval(cx - bulb_radius, bulb_y - bulb_radius, cx + bulb_radius, bulb_y + bulb_radius, fill=fill_color, outline="#6c757d", width=2)
+
+        # Calculate fluid level stem height
+        fill_pct = min(1.0, val / max(1, self.max_val))
+        fluid_height = fill_pct * (bottom_y - top_y)
+        fluid_top_y = bottom_y - fluid_height
+
+        if fluid_height > 0:
+            self.create_rectangle(stem_left + 2, fluid_top_y, stem_right - 2, bottom_y + 4, fill=fill_color, outline="")
+
+        # Tick marks & labels
+        tick_steps = 4
+        for i in range(tick_steps + 1):
+            tick_val = int((self.max_val / tick_steps) * i)
+            ty = bottom_y - (i / tick_steps) * (bottom_y - top_y)
+            self.create_line(stem_right + 2, ty, stem_right + 10, ty, fill="#495057", width=1.5)
+            self.create_text(stem_right + 14, ty, text=str(tick_val), anchor=tk.W, font=("Arial", 8, "bold"), fill="#495057")
+
+        # Glass shine highlight on stem
+        self.create_line(stem_left + 3, top_y + 2, stem_left + 3, bottom_y - 2, fill="#ffffff", width=1.5)
+
+        # Numeric value callout badge inside gauge top banner
+        self.create_rectangle(5, 5, self.width - 5, 28, fill="#ffffff", outline="#ced4da", width=1)
+        text_color = fill_color if val > 0 else "#28a745"
+        self.create_text(self.width // 2, 16, text=f"{val} JOBS", font=("Arial", 10, "bold"), fill=text_color)
+
 
 class AppGUI:
     def __init__(self, root: tk.Tk):
@@ -67,7 +144,7 @@ class AppGUI:
         self.btn_sync_zip = ttk.Button(file_btn_frame, text="Import Sync File", command=self._select_sync_zip_file)
         self.btn_sync_zip.pack(side=tk.RIGHT, padx=2)
 
-        self.btn_excel = ttk.Button(file_btn_frame, text="Select Excel File", command=self._select_excel_file)
+        self.btn_excel = ttk.Button(file_btn_frame, text="SelectPhotographed List", command=self._select_excel_file)
         self.btn_excel.pack(side=tk.RIGHT, padx=2)
         
         self.lbl_file_path = ttk.Label(file_btn_frame, text="No file selected", font=("Arial", 8), foreground="gray")
@@ -197,9 +274,15 @@ class AppGUI:
         self.ent_print_hotkey = ttk.Entry(t_grid, width=8)
         self.ent_print_hotkey.grid(row=4, column=1, padx=5, pady=2)
 
-        # Clear Fields Button
-        btn_clear_fields = ttk.Button(timing_frame, text="Clear All Fields", command=self._clear_all_fields)
-        btn_clear_fields.pack(anchor=tk.W, pady=(5, 0))
+        # Action Buttons Row (Load Defaults & Clear Fields)
+        btn_action_row = ttk.Frame(timing_frame)
+        btn_action_row.pack(fill=tk.X, pady=(5, 0))
+
+        btn_load_defaults = ttk.Button(btn_action_row, text="Load Default Values", command=self._load_default_values)
+        btn_load_defaults.pack(side=tk.LEFT, padx=(0, 4))
+
+        btn_clear_fields = ttk.Button(btn_action_row, text="Clear All Fields", command=self._clear_all_fields)
+        btn_clear_fields.pack(side=tk.LEFT)
 
         # Checkboxes
         self.var_mouse_trail = tk.BooleanVar(value=self.config.enable_mouse_trail)
@@ -226,6 +309,48 @@ class AppGUI:
 
         btn_test_print = ttk.Button(test_btn_box, text="Test Print", command=self._test_print_button)
         btn_test_print.pack(side=tk.RIGHT, expand=True, fill=tk.X, padx=2)
+
+        # --- SECTION 4.5: PRINT QUEUE MONITOR ---
+        queue_frame = ttk.LabelFrame(right_pane, text="PRINT QUEUE MONITOR", padding="8")
+        queue_frame.pack(fill=tk.X, pady=5)
+
+        q_top_box = ttk.Frame(queue_frame)
+        q_top_box.pack(fill=tk.X, pady=(0, 4))
+
+        ttk.Label(q_top_box, text="Printer Queue:", font=("Arial", 9, "bold")).pack(side=tk.LEFT, padx=(0, 4))
+        
+        self.combo_printers = ttk.Combobox(q_top_box, state="readonly")
+        self.combo_printers.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        self.combo_printers.bind("<<ComboboxSelected>>", self._on_printer_selected)
+
+        btn_refresh_printers = ttk.Button(q_top_box, text="🔄", width=3, command=self._refresh_printer_list)
+        btn_refresh_printers.pack(side=tk.RIGHT)
+
+        # Monitor container layout (Thermometer Gauge Left, Stats Info Right)
+        q_body_box = ttk.Frame(queue_frame)
+        q_body_box.pack(fill=tk.X, pady=2)
+
+        self.thermometer = ThermometerGauge(q_body_box, width=120, height=220, max_val=20)
+        self.thermometer.pack(side=tk.LEFT, padx=(5, 15))
+
+        q_info_frame = ttk.Frame(q_body_box)
+        q_info_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.lbl_queue_printer = ttk.Label(q_info_frame, text="Selected: --", font=("Arial", 9, "bold"))
+        self.lbl_queue_printer.pack(anchor=tk.W, pady=2)
+
+        self.lbl_queue_jobs = ttk.Label(q_info_frame, text="Active Queue Jobs: 0", font=("Arial", 10, "bold"), foreground="#0066cc")
+        self.lbl_queue_jobs.pack(anchor=tk.W, pady=2)
+
+        self.lbl_queue_status = ttk.Label(q_info_frame, text="Printer Status: Ready / Idle", font=("Arial", 9))
+        self.lbl_queue_status.pack(anchor=tk.W, pady=2)
+
+        self.var_auto_poll_queue = tk.BooleanVar(value=True)
+        chk_poll = ttk.Checkbutton(q_info_frame, text="Auto-Monitor Queue (1s)", variable=self.var_auto_poll_queue)
+        chk_poll.pack(anchor=tk.W, pady=(10, 0))
+
+        btn_poll_now = ttk.Button(q_info_frame, text="Check Queue Now", command=self._poll_print_queue)
+        btn_poll_now.pack(anchor=tk.W, pady=(5, 0))
 
         # --- SECTION 5: CONTROL BUTTONS ---
         control_frame = ttk.LabelFrame(main_frame, text="CONTROL", padding="8")
@@ -316,6 +441,9 @@ class AppGUI:
         if self.config.last_excel_path and os.path.exists(self.config.last_excel_path):
             self._load_excel_file(self.config.last_excel_path)
 
+        self._refresh_printer_list()
+        self._start_queue_polling_loop()
+
     def _on_pause_setting_changed(self):
         """Called when user edits the pause after cards entry box."""
         try:
@@ -342,6 +470,35 @@ class AppGUI:
             self.lbl_pause_countdown.config(text="(Remaining: 0 - PAUSED)", foreground="#cc6600")
         else:
             self.lbl_pause_countdown.config(text=f"(Remaining: {remaining})", foreground="#0066cc")
+
+    def _load_default_values(self):
+        """Loads recommended default timing values and option settings into GUI entry boxes."""
+        default_cfg = AppConfig()
+
+        self.ent_delay_start.delete(0, tk.END)
+        self.ent_delay_start.insert(0, str(default_cfg.search_start_delay))
+
+        self.ent_delay_wait.delete(0, tk.END)
+        self.ent_delay_wait.insert(0, str(default_cfg.max_search_wait))
+
+        self.ent_delay_print.delete(0, tk.END)
+        self.ent_delay_print.insert(0, str(default_cfg.print_delay))
+
+        self.ent_delay_between.delete(0, tk.END)
+        self.ent_delay_between.insert(0, str(default_cfg.between_student_delay))
+
+        self.ent_print_hotkey.delete(0, tk.END)
+        self.ent_print_hotkey.insert(0, str(default_cfg.print_hotkey))
+
+        self.ent_pause_after.delete(0, tk.END)
+        self.ent_pause_after.insert(0, str(default_cfg.pause_after_cards))
+        self._update_pause_countdown(default_cfg.pause_after_cards)
+
+        self.var_mouse_trail.set(default_cfg.enable_mouse_trail)
+        self.var_require_verification.set(default_cfg.require_verification)
+        self.var_dry_run.set(default_cfg.dry_run)
+
+        self.logger.log("Loaded default timing and option values into GUI.")
 
     def _clear_all_fields(self):
         """Clears all text entry fields in the GUI."""
@@ -1018,3 +1175,93 @@ class AppGUI:
             messagebox.showerror("Emergency Stop", "Automation stopped via Emergency Hotkey (ESC key) or Mouse Corner!")
         
         self.root.after(200, self._check_automation_status)
+
+    def _refresh_printer_list(self):
+        """Populates the printer queue drop-down list from Windows win32print."""
+        printers = []
+        if win32print:
+            try:
+                flags = win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
+                printer_info = win32print.EnumPrinters(flags)
+                printers = sorted([p[2] for p in printer_info])
+            except Exception as e:
+                self.logger.log(f"Error enumerating printers: {e}")
+
+        if not printers:
+            printers = ["NullPrinter"]
+
+        self.combo_printers['values'] = printers
+
+        # Default selection: preference order -> config -> NullPrinter -> first printer
+        target_printer = self.config.selected_printer or "NullPrinter"
+        if target_printer in printers:
+            self.combo_printers.set(target_printer)
+        elif "NullPrinter" in printers:
+            self.combo_printers.set("NullPrinter")
+        else:
+            self.combo_printers.set(printers[0])
+
+        self._on_printer_selected()
+
+    def _on_printer_selected(self, event=None):
+        selected = self.combo_printers.get().strip()
+        if selected:
+            self.config.selected_printer = selected
+            self.config.save()
+            self.lbl_queue_printer.config(text=f"Selected: {selected}")
+            self._poll_print_queue()
+
+    def _poll_print_queue(self):
+        """Polls the active printer queue job count and status using win32print."""
+        printer_name = self.combo_printers.get().strip()
+        if not printer_name or not win32print:
+            self.lbl_queue_jobs.config(text="Active Queue Jobs: N/A", foreground="gray")
+            self.lbl_queue_status.config(text="Printer Status: win32print unavailable")
+            self.thermometer.set_value(0)
+            return
+
+        def _worker():
+            job_count = 0
+            status_str = "Ready / Idle"
+            try:
+                h_printer = win32print.OpenPrinter(printer_name)
+                try:
+                    p_info = win32print.GetPrinter(h_printer, 2)
+                    job_count = p_info.get('cJobs', 0)
+                    status_flag = p_info.get('Status', 0)
+
+                    status_parts = []
+                    if status_flag & 0x00000001: status_parts.append("Paused")
+                    if status_flag & 0x00000002: status_parts.append("Error")
+                    if status_flag & 0x00000004: status_parts.append("Pending Deletion")
+                    if status_flag & 0x00000008: status_parts.append("Paper Jam")
+                    if status_flag & 0x00000010: status_parts.append("Out of Paper")
+                    if status_flag & 0x00000020: status_parts.append("Manual Feed")
+                    if status_flag & 0x00000400: status_parts.append("Printing")
+                    if status_flag & 0x00000200: status_parts.append("Offline")
+
+                    if status_parts:
+                        status_str = ", ".join(status_parts)
+                    elif job_count > 0:
+                        status_str = f"Active ({job_count} jobs pending)"
+                    else:
+                        status_str = "Ready / Idle"
+                finally:
+                    win32print.ClosePrinter(h_printer)
+            except Exception as ex:
+                status_str = f"Unable to query ({ex})"
+
+            def _update_ui():
+                self.lbl_queue_jobs.config(text=f"Active Queue Jobs: {job_count}")
+                self.lbl_queue_status.config(text=f"Status: {status_str}")
+                self.thermometer.set_value(job_count)
+
+            self.root.after(0, _update_ui)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _start_queue_polling_loop(self):
+        """Starts regular periodic polling for print queue monitoring."""
+        if hasattr(self, 'var_auto_poll_queue') and self.var_auto_poll_queue.get():
+            self._poll_print_queue()
+        self.root.after(1000, self._start_queue_polling_loop)
