@@ -4,8 +4,15 @@ import ctypes
 import tkinter as tk
 
 def set_dpi_awareness():
-    """Sets high DPI awareness on Windows to prevent coordinate scaling mismatch."""
+    """Sets high DPI awareness and process AppUserModelID on Windows for custom taskbar icons."""
     if sys.platform == 'win32':
+        try:
+            # Register explicit AppUserModelID so Windows Taskbar pins and displays the custom icon
+            myappid = 'Schoolhouse.StudentPhotoPrintAutomator.App.2.0'
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+        except Exception:
+            pass
+
         try:
             ctypes.windll.shcore.SetProcessDpiAwareness(2) # Per-monitor DPI aware
         except Exception:

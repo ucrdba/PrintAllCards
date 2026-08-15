@@ -132,12 +132,22 @@ class AppGUI:
         self.root.geometry("850x700")
         self.root.minsize(700, 500)
 
-        # Set application icon (supports PyInstaller bundle)
+        # Set application icon (supports PyInstaller bundle and Windows Taskbar)
         base_dir = getattr(sys, '_MEIPASS', os.path.dirname(__file__))
-        icon_path = os.path.join(base_dir, 'app_icon.ico')
-        if os.path.exists(icon_path):
+        icon_ico = os.path.join(base_dir, 'app_icon.ico')
+        icon_png = os.path.join(base_dir, 'app_icon.png')
+
+        if os.path.exists(icon_ico):
             try:
-                self.root.iconbitmap(icon_path)
+                self.root.iconbitmap(icon_ico)
+            except Exception:
+                pass
+
+        if os.path.exists(icon_png):
+            try:
+                from PIL import Image, ImageTk
+                photo = ImageTk.PhotoImage(Image.open(icon_png))
+                self.root.iconphoto(True, photo)
             except Exception:
                 pass
 
