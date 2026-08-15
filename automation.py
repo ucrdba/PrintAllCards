@@ -195,6 +195,15 @@ class AutomationController:
 
         return None
 
+    def process_single_student(self, student_id: str, is_test: bool = False) -> Tuple[bool, str]:
+        """
+        Performs the 4-step sequence:
+        1. Click Search Box (search_x, search_y)
+        2. Select all & clear (Ctrl+A, Backspace)
+        3. Copy to clipboard & paste (Ctrl+V)
+        4. Wait for verification up to max_search_wait
+        If is_test is False and verification succeeds and not dry_run, clicks Print.
+        """
         try:
             return self._execute_single_student(student_id, is_test)
         except pyautogui.FailSafeException:
