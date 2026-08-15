@@ -1,8 +1,9 @@
+import sys
+import os
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import threading
 import time
-import os
 from typing import List
 
 import pyautogui
@@ -96,6 +97,15 @@ class AppGUI:
         self.root.title("Student Photo Print Automator")
         self.root.geometry("850x700")
         self.root.minsize(700, 500)
+
+        # Set application icon (supports PyInstaller bundle)
+        base_dir = getattr(sys, '_MEIPASS', os.path.dirname(__file__))
+        icon_path = os.path.join(base_dir, 'app_icon.ico')
+        if os.path.exists(icon_path):
+            try:
+                self.root.iconbitmap(icon_path)
+            except Exception:
+                pass
 
         self.config = AppConfig.load()
         self.logger = AppLogger(gui_callback=self.append_log)

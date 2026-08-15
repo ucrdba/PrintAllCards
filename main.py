@@ -32,8 +32,13 @@ def show_splash_screen(root, duration_ms=5000):
     frame = tk.Frame(splash, bg="#1e222d", highlightbackground="#0066cc", highlightthickness=2)
     frame.pack(fill=tk.BOTH, expand=True)
 
-    # Logo image setup
-    logo_path = os.path.join(os.path.dirname(__file__), 'app_icon.png')
+    # Logo image setup (supports both script execution and PyInstaller single-file bundle)
+    if hasattr(sys, '_MEIPASS'):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.dirname(__file__)
+
+    logo_path = os.path.join(base_path, 'app_icon.png')
     logo_img = None
     if os.path.exists(logo_path):
         try:
