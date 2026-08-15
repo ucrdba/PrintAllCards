@@ -20,6 +20,40 @@ from excel_handler import ExcelHandler
 from automation import AutomationController
 
 
+class ToolTip:
+    """Creates a floating mouse-hover tooltip popup over GUI widgets."""
+    def __init__(self, widget, text: str):
+        self.widget = widget
+        self.text = text
+        self.tip_window = None
+        self.widget.bind("<Enter>", self.show_tip)
+        self.widget.bind("<Leave>", self.hide_tip)
+
+    def show_tip(self, event=None):
+        if self.tip_window or not self.text:
+            return
+        x = self.widget.winfo_rootx() + 20
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
+
+        self.tip_window = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        tw.attributes("-topmost", True)
+
+        label = tk.Label(
+            tw, text=self.text, justify=tk.LEFT,
+            background="#ffffe1", foreground="#333333",
+            relief=tk.SOLID, borderwidth=1,
+            font=("Arial", 9, "normal"), padx=6, pady=4
+        )
+        label.pack(ipadx=1)
+
+    def hide_tip(self, event=None):
+        if self.tip_window:
+            self.tip_window.destroy()
+            self.tip_window = None
+
+
 class ThermometerGauge(tk.Canvas):
     """Custom canvas-based vertical thermometer gauge to visualize print queue load."""
     def __init__(self, parent, width=120, height=260, max_val=20, **kwargs):
@@ -113,6 +147,7 @@ class AppGUI:
         self.automation.get_queue_job_count = self._get_current_queue_job_count
 
         self.student_ids: List[str] = []
+        self.processed_history: List[dict] = []
         self.initial_total_count = 0
         self.is_processing = False
         self.automation_thread: threading.Thread = None
@@ -155,9 +190,16 @@ class AppGUI:
         v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         container_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        # Title Banner
-        title_label = ttk.Label(main_frame, text="STUDENT PHOTO PRINT AUTOMATOR", font=("Arial", 14, "bold"))
-        title_label.pack(pady=(0, 10))
+        # Title Banner Row with Help Button
+        title_box = ttk.Frame(main_frame)
+        title_box.pack(fill=tk.X, pady=(0, 10))
+
+        title_label = ttk.Label(title_box, text="STUDENT PHOTO PRINT AUTOMATOR", font=("Arial", 14, "bold"))
+        title_label.pack(side=tk.LEFT)
+
+        btn_app_help = ttk.Button(title_box, text="❓ Help & Guide", command=self._show_help_guide)
+        btn_app_help.pack(side=tk.RIGHT)
+        ToolTip(btn_app_help, "Opens the interactive User Guide & Timing Reference handbook.")
 
         # Split top area into Left (Excel & Student list) and Right (Locations, Timing, Controls)
         top_pane = ttk.Frame(main_frame)
@@ -190,9 +232,11 @@ class AppGUI:
 
         self.btn_excel = ttk.Button(btn_box, text="Import Excel/CSV", command=self._select_excel_file)
         self.btn_excel.pack(side=tk.LEFT, padx=2)
+        ToolTip(self.btn_excel, "Imports photographed student records from an Excel (.xlsx/.xls) or CSV file.")
 
         self.btn_sync_zip = ttk.Button(btn_box, text="Import Sync File(s)", command=self._select_sync_zip_file)
         self.btn_sync_zip.pack(side=tk.LEFT, padx=2)
+        ToolTip(self.btn_sync_zip, "Imports student records from sync archive zip file(s).")
 
         # Row 2: Radiobuttons placed directly under the two import buttons (right-aligned)
         row2 = ttk.Frame(toolbar)
@@ -205,8 +249,11 @@ class AppGUI:
         self.var_import_mode = tk.StringVar(value="single")
         rb_single = ttk.Radiobutton(radio_box, text="Single", value="single", variable=self.var_import_mode)
         rb_single.pack(side=tk.LEFT, padx=3)
+        ToolTip(rb_single, "Single Mode: Replaces the current student list when importing a file.")
+
         rb_append = ttk.Radiobutton(radio_box, text="Multiple", value="append", variable=self.var_import_mode)
         rb_append.pack(side=tk.LEFT, padx=3)
+        ToolTip(rb_append, "Multiple Mode: Allows selecting multiple files to append and merge into the current list.")
 
         self.lbl_found_count = ttk.Label(excel_frame, text="0 PHOTOGRAPHED STUDENTS FOUND", font=("Arial", 9, "bold"), foreground="#0066cc")
         self.lbl_found_count.pack(anchor=tk.W, pady=(4, 6))
@@ -219,9 +266,11 @@ class AppGUI:
         self.ent_filter_list = ttk.Entry(filter_box)
         self.ent_filter_list.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
         self.ent_filter_list.bind("<KeyRelease>", lambda e: self._on_filter_list_changed())
+        ToolTip(self.ent_filter_list, "Type student ID, first name, last name, or grade to highlight matching students.")
 
         btn_clear_filter = ttk.Button(filter_box, text="Clear", width=6, command=self._clear_list_filter)
         btn_clear_filter.pack(side=tk.RIGHT)
+        ToolTip(btn_clear_filter, "Clears the search text filter.")
 
         # Student Treeview Table (Sortable Columns)
         tree_frame = ttk.Frame(excel_frame)
@@ -229,6 +278,7 @@ class AppGUI:
 
         columns = ("id", "first_name", "last_name", "grade")
         self.student_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=10, selectmode="extended")
+        ToolTip(self.student_tree, "Right-click anywhere inside table to open context menu (Copy ID, Remove, Clear All). Double-click copies ID.")
         
         self.student_tree.heading("id", text="Student ID ↕", command=lambda: self._sort_treeview("id", False))
         self.student_tree.heading("first_name", text="First Name ↕", command=lambda: self._sort_treeview("first_name", False))
@@ -256,15 +306,23 @@ class AppGUI:
 
         btn_remove_student = ttk.Button(export_btn_box, text="🗑️ Remove Selected", command=self._remove_selected_student)
         btn_remove_student.pack(side=tk.LEFT, padx=2)
+        ToolTip(btn_remove_student, "Deletes highlighted student row(s) from the list.")
 
         btn_remove_prior = ttk.Button(export_btn_box, text="✂️ Delete Prior", command=self._remove_prior_students)
         btn_remove_prior.pack(side=tk.LEFT, padx=2)
+        ToolTip(btn_remove_prior, "Removes all student rows above the highlighted student ID.")
+
+        btn_restore_prior = ttk.Button(export_btn_box, text="↩️ Restore Prior N", command=self._restore_previous_students)
+        btn_restore_prior.pack(side=tk.LEFT, padx=2)
+        ToolTip(btn_restore_prior, "Restores the last N processed/deleted students back to the top of the queue.")
 
         btn_save_list = ttk.Button(export_btn_box, text="Save Remaining List", command=self._save_remaining_list)
         btn_save_list.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
+        ToolTip(btn_save_list, "Exports unprinted remaining student records to a CSV/XLSX file.")
 
         btn_load_list = ttk.Button(export_btn_box, text="Load Saved List", command=self._load_saved_list)
         btn_load_list.pack(side=tk.RIGHT, expand=True, fill=tk.X, padx=2)
+        ToolTip(btn_load_list, "Loads a previously saved student list back into the table.")
 
         # Bind Delete / Backspace keys to Treeview for quick removal
         self.student_tree.bind("<Delete>", lambda e: self._remove_selected_student())
@@ -279,6 +337,7 @@ class AppGUI:
         self.tree_context_menu.add_command(label="📋 Copy Student ID", command=lambda: self._on_student_double_click(None))
         self.tree_context_menu.add_command(label="🗑️ Remove Selected", command=self._remove_selected_student)
         self.tree_context_menu.add_command(label="✂️ Delete Prior", command=self._remove_prior_students)
+        self.tree_context_menu.add_command(label="↩️ Restore Previous N Students", command=self._restore_previous_students)
         self.tree_context_menu.add_separator()
         self.tree_context_menu.add_command(label="⚠️ Clear Entire List", command=self._clear_entire_student_list)
 
@@ -301,6 +360,7 @@ class AppGUI:
         self.ent_search_y.pack(side=tk.LEFT, padx=2)
         btn_pick_search = ttk.Button(s_row, text="Select Location", command=lambda: self._capture_location("Search"))
         btn_pick_search.pack(side=tk.RIGHT)
+        ToolTip(btn_pick_search, "Captures mouse cursor coordinates over the StudentSearch input box (3 sec delay).")
 
         # Print Location
         p_row = ttk.Frame(loc_frame)
@@ -314,6 +374,7 @@ class AppGUI:
         self.ent_print_y.pack(side=tk.LEFT, padx=2)
         btn_pick_print = ttk.Button(p_row, text="Select Location", command=lambda: self._capture_location("Print"))
         btn_pick_print.pack(side=tk.RIGHT)
+        ToolTip(btn_pick_print, "Captures mouse cursor coordinates over the Print Card action button (3 sec delay).")
 
         # --- SECTION 3: TIMING & CONFIG ---
         timing_frame = ttk.LabelFrame(right_pane, text="TIMING & OPTIONS", padding="8")
@@ -322,25 +383,35 @@ class AppGUI:
         t_grid = ttk.Frame(timing_frame)
         t_grid.pack(fill=tk.X)
 
-        ttk.Label(t_grid, text="Search Start Delay (s):").grid(row=0, column=0, sticky=tk.W, pady=2)
+        lbl_delay_start = ttk.Label(t_grid, text="Search Start Delay (s):")
+        lbl_delay_start.grid(row=0, column=0, sticky=tk.W, pady=2)
         self.ent_delay_start = ttk.Entry(t_grid, width=8)
         self.ent_delay_start.grid(row=0, column=1, padx=5, pady=2)
+        ToolTip(self.ent_delay_start, "Delay (in seconds) after clicking the StudentSearch box before pasting Student ID.")
 
-        ttk.Label(t_grid, text="Max Search Wait (s):").grid(row=1, column=0, sticky=tk.W, pady=2)
+        lbl_delay_wait = ttk.Label(t_grid, text="Max Search Wait (s):")
+        lbl_delay_wait.grid(row=1, column=0, sticky=tk.W, pady=2)
         self.ent_delay_wait = ttk.Entry(t_grid, width=8)
         self.ent_delay_wait.grid(row=1, column=1, padx=5, pady=2)
+        ToolTip(self.ent_delay_wait, "Maximum seconds to wait for StudentSearch to verify and locate the student record before timing out.")
 
-        ttk.Label(t_grid, text="Print Delay (s):").grid(row=2, column=0, sticky=tk.W, pady=2)
+        lbl_delay_print = ttk.Label(t_grid, text="Print Delay (s):")
+        lbl_delay_print.grid(row=2, column=0, sticky=tk.W, pady=2)
         self.ent_delay_print = ttk.Entry(t_grid, width=8)
         self.ent_delay_print.grid(row=2, column=1, padx=5, pady=2)
+        ToolTip(self.ent_delay_print, "Delay (in seconds) after clicking Print to allow card print job to queue in Windows.")
 
-        ttk.Label(t_grid, text="Between Student Delay (s):").grid(row=3, column=0, sticky=tk.W, pady=2)
+        lbl_delay_between = ttk.Label(t_grid, text="Between Student Delay (s):")
+        lbl_delay_between.grid(row=3, column=0, sticky=tk.W, pady=2)
         self.ent_delay_between = ttk.Entry(t_grid, width=8)
         self.ent_delay_between.grid(row=3, column=1, padx=5, pady=2)
+        ToolTip(self.ent_delay_between, "Buffer delay (in seconds) between completing one student card and starting the next.")
 
-        ttk.Label(t_grid, text="Print Hotkey (e.g. ctrl+p):").grid(row=4, column=0, sticky=tk.W, pady=2)
+        lbl_print_hotkey = ttk.Label(t_grid, text="Print Hotkey (e.g. ctrl+p):")
+        lbl_print_hotkey.grid(row=4, column=0, sticky=tk.W, pady=2)
         self.ent_print_hotkey = ttk.Entry(t_grid, width=8)
         self.ent_print_hotkey.grid(row=4, column=1, padx=5, pady=2)
+        ToolTip(self.ent_print_hotkey, "Keyboard hotkey trigger to issue Print command (e.g. 'ctrl+p') if mouse click location is not used.")
 
         # Action Buttons Row (Load Defaults & Clear Fields)
         btn_action_row = ttk.Frame(timing_frame)
@@ -348,22 +419,27 @@ class AppGUI:
 
         btn_load_defaults = ttk.Button(btn_action_row, text="Load Default Values", command=self._load_default_values)
         btn_load_defaults.pack(side=tk.LEFT, padx=(0, 4))
+        ToolTip(btn_load_defaults, "Resets all timing delays and options back to recommended default values.")
 
         btn_clear_fields = ttk.Button(btn_action_row, text="Clear All Fields", command=self._clear_all_fields)
         btn_clear_fields.pack(side=tk.LEFT)
+        ToolTip(btn_clear_fields, "Clears all location coordinates and timing entry boxes.")
 
         # Checkboxes
         self.var_mouse_trail = tk.BooleanVar(value=self.config.enable_mouse_trail)
         chk_trail = ttk.Checkbutton(timing_frame, text="Enable Visible Mouse Movement Trail", variable=self.var_mouse_trail)
         chk_trail.pack(anchor=tk.W, pady=(5, 0))
+        ToolTip(chk_trail, "Smoothly animates mouse cursor movements so you can see where clicks take place.")
 
         self.var_require_verification = tk.BooleanVar(value=self.config.require_verification)
         chk_verify = ttk.Checkbutton(timing_frame, text="Require Strict StudentSearch Verification", variable=self.var_require_verification)
         chk_verify.pack(anchor=tk.W, pady=(2, 0))
+        ToolTip(chk_verify, "Verifies that StudentSearch successfully loads the student record before issuing Print.")
 
         self.var_dry_run = tk.BooleanVar(value=self.config.dry_run)
         chk_dry_run = ttk.Checkbutton(timing_frame, text="Dry Run (Do not click Print)", variable=self.var_dry_run)
         chk_dry_run.pack(anchor=tk.W, pady=(2, 0))
+        ToolTip(chk_dry_run, "Simulates card search without actually clicking the Print button.")
 
         # --- SECTION 4: TEST BUTTONS ---
         test_frame = ttk.LabelFrame(right_pane, text="TESTING", padding="8")
@@ -374,9 +450,11 @@ class AppGUI:
         
         btn_test_student = ttk.Button(test_btn_box, text="Test Current Student", command=self._test_current_student)
         btn_test_student.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
+        ToolTip(btn_test_student, "Tests searching for the highlighted student ID without triggering a print job.")
 
         btn_test_print = ttk.Button(test_btn_box, text="Test Print", command=self._test_print_button)
         btn_test_print.pack(side=tk.RIGHT, expand=True, fill=tk.X, padx=2)
+        ToolTip(btn_test_print, "Issues a single click on the configured Print Button location after 1 second.")
 
         # --- SECTION 4.5: PRINT QUEUE MONITOR ---
         queue_frame = ttk.LabelFrame(right_pane, text="PRINT QUEUE MONITOR", padding="8")
@@ -390,9 +468,11 @@ class AppGUI:
         self.combo_printers = ttk.Combobox(q_top_box, state="readonly")
         self.combo_printers.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
         self.combo_printers.bind("<<ComboboxSelected>>", self._on_printer_selected)
+        ToolTip(self.combo_printers, "Select the target Windows printer queue to monitor.")
 
         btn_refresh_printers = ttk.Button(q_top_box, text="🔄", width=3, command=self._refresh_printer_list)
         btn_refresh_printers.pack(side=tk.RIGHT)
+        ToolTip(btn_refresh_printers, "Refreshes the list of installed local and network printers.")
 
         # Monitor container layout (Thermometer Gauge Left, Stats Info Right)
         q_body_box = ttk.Frame(queue_frame)
@@ -400,6 +480,7 @@ class AppGUI:
 
         self.thermometer = ThermometerGauge(q_body_box, width=120, height=220, max_val=20)
         self.thermometer.pack(side=tk.LEFT, padx=(5, 15))
+        ToolTip(self.thermometer, "Thermometer gauge visualizer showing real-time active print jobs in queue.")
 
         q_info_frame = ttk.Frame(q_body_box)
         q_info_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -415,10 +496,12 @@ class AppGUI:
 
         self.lbl_queue_timing = ttk.Label(q_info_frame, text="⏱️ Job Timing: Min: -- | Max: -- | Avg: --", font=("Arial", 9, "bold"), foreground="#28a745")
         self.lbl_queue_timing.pack(anchor=tk.W, pady=(4, 2))
+        ToolTip(self.lbl_queue_timing, "Real-time Minimum, Maximum, and Average completion duration for card jobs in this batch.")
 
         self.var_auto_poll_queue = tk.BooleanVar(value=True)
         chk_poll = ttk.Checkbutton(q_info_frame, text="Auto-Monitor Queue (1s)", variable=self.var_auto_poll_queue)
         chk_poll.pack(anchor=tk.W, pady=(4, 0))
+        ToolTip(chk_poll, "Automatically queries Windows print queue depth every 1 second.")
 
         # --- Queue Batch Sync Throttling Controls ---
         q_sync_box = ttk.Frame(q_info_frame)
@@ -427,6 +510,7 @@ class AppGUI:
         self.var_queue_sync = tk.BooleanVar(value=getattr(self.config, 'enable_queue_sync', True))
         chk_sync = ttk.Checkbutton(q_sync_box, text="Sync Batch with Queue (Pause when full)", variable=self.var_queue_sync, command=self._save_queue_sync_settings)
         chk_sync.pack(anchor=tk.W)
+        ToolTip(chk_sync, "Pauses batch card printing whenever active printer queue reaches your Max Running Jobs limit.")
 
         q_thresh_row = ttk.Frame(q_sync_box)
         q_thresh_row.pack(anchor=tk.W, pady=(2, 0))
@@ -436,9 +520,11 @@ class AppGUI:
         self.ent_max_jobs.pack(side=tk.LEFT, padx=2)
         self.ent_max_jobs.bind("<KeyRelease>", lambda e: self._save_queue_sync_settings())
         ttk.Label(q_thresh_row, text="jobs", font=("Arial", 9)).pack(side=tk.LEFT)
+        ToolTip(self.ent_max_jobs, "Maximum number of active jobs allowed in print queue before automation pauses.")
 
         btn_poll_now = ttk.Button(q_info_frame, text="Check Queue Now", command=self._poll_print_queue)
         btn_poll_now.pack(anchor=tk.W, pady=(5, 0))
+        ToolTip(btn_poll_now, "Immediately checks active Windows printer job count and status.")
 
         # --- SECTION 5: CONTROL BUTTONS ---
         control_frame = ttk.LabelFrame(main_frame, text="CONTROL", padding="8")
@@ -449,12 +535,15 @@ class AppGUI:
 
         self.btn_start = tk.Button(ctrl_box, text="START", bg="#28a745", fg="white", font=("Arial", 11, "bold"), command=self._start_automation)
         self.btn_start.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=5)
+        ToolTip(self.btn_start, "Starts batch card photo printing automation.")
 
         self.btn_pause = tk.Button(ctrl_box, text="PAUSE", bg="#ffc107", fg="black", font=("Arial", 11, "bold"), command=self._pause_automation)
         self.btn_pause.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=5)
+        ToolTip(self.btn_pause, "Pauses/Resumes card automation after current student completes.")
 
         self.btn_stop = tk.Button(ctrl_box, text="STOP", bg="#dc3545", fg="white", font=("Arial", 11, "bold"), command=self._stop_automation)
         self.btn_stop.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=5)
+        ToolTip(self.btn_stop, "Halts batch automation immediately.")
 
         # Pause after N cards row (placed under PAUSE button)
         pause_cfg_row = ttk.Frame(control_frame)
@@ -882,8 +971,14 @@ class AppGUI:
             self.student_tree.delete(item_id)
             removed_ids.append(item_id)
 
-        # Update student_records and student_ids
         rem_set = set(removed_ids)
+
+        # Store removed records into processed_history stack for Undo / Restore
+        for sid in removed_ids:
+            matching_rec = next((r for r in self.student_records if r['id'] == sid), {'id': sid})
+            self.processed_history.append(matching_rec)
+
+        # Update student_records and student_ids
         self.student_records = [r for r in self.student_records if r['id'] not in rem_set]
         self.student_ids = [sid for sid in self.student_ids if sid not in rem_set]
 
@@ -910,6 +1005,8 @@ class AppGUI:
             return
 
         if messagebox.askyesno("Clear Entire List", f"Are you sure you want to clear all {len(self.student_records)} student(s) from the list?"):
+            # Store all cleared records into history
+            self.processed_history.extend(self.student_records)
             self.student_records = []
             self.student_ids = []
             self._refresh_treeview_from_records()
@@ -964,6 +1061,11 @@ class AppGUI:
         remove_count = idx + 1 if choice else idx
         removed_ids = self.student_ids[:remove_count]
 
+        # Store removed records into processed_history stack for Undo / Restore
+        for sid in removed_ids:
+            matching_rec = next((r for r in self.student_records if r['id'] == sid), {'id': sid})
+            self.processed_history.append(matching_rec)
+
         # Update student_tree, student_records, student_ids
         rem_set = set(removed_ids)
         for item_id in removed_ids:
@@ -979,6 +1081,10 @@ class AppGUI:
 
     def _pop_student(self, student_id: str):
         """Removes a processed student from student_records, student_ids, and Treeview UI synchronously in memory."""
+        # Find record before popping
+        matching_rec = next((r for r in self.student_records if r['id'] == student_id), {'id': student_id})
+        self.processed_history.append(matching_rec)
+
         if self.student_ids and self.student_ids[0] == student_id:
             self.student_ids.pop(0)
         elif student_id in self.student_ids:
@@ -993,6 +1099,134 @@ class AppGUI:
             self._update_progress_from_records()
 
         self.root.after(0, _do_ui_pop)
+
+    def _restore_previous_students(self):
+        """Displays interactive modal dialog with checkboxes, Select All, and Clear All to restore selected students."""
+        if not self.processed_history:
+            messagebox.showinfo("Undo / Restore Students", "No previously processed students are available in the history stack to restore.")
+            return
+
+        # Unique records from history (latest first)
+        history_records = list(reversed(self.processed_history))
+        
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Restore Previous Students")
+        dialog.geometry("560x540")
+        dialog.minsize(450, 380)
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk.Label(
+            dialog, text="Select Previous Students to Restore to Print Queue",
+            font=("Arial", 10, "bold"), foreground="#0066cc"
+        ).pack(pady=(10, 4))
+
+        # Toolbar row: Select All & Clear All buttons
+        tool_bar = ttk.Frame(dialog)
+        tool_bar.pack(fill=tk.X, padx=15, pady=4)
+
+        vars_map = {}
+
+        def _select_all():
+            for var in vars_map.values():
+                var.set(True)
+
+        def _clear_all():
+            for var in vars_map.values():
+                var.set(False)
+
+        btn_select_all = ttk.Button(tool_bar, text="☑ Select All", command=_select_all)
+        btn_select_all.pack(side=tk.LEFT, padx=(0, 4))
+
+        btn_clear_all = ttk.Button(tool_bar, text="☐ Clear All", command=_clear_all)
+        btn_clear_all.pack(side=tk.LEFT)
+
+        lbl_avail = ttk.Label(tool_bar, text=f"{len(history_records)} Available", font=("Arial", 8, "italic"), foreground="#6c757d")
+        lbl_avail.pack(side=tk.RIGHT)
+
+        # Bottom Action Buttons Row packed FIRST (with side=tk.BOTTOM) so it is always visible even if resized
+        action_bar = ttk.Frame(dialog)
+        action_bar.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=12)
+
+        restored_result = []
+
+        def _on_confirm():
+            selected_ids = [sid for sid, var in vars_map.items() if var.get()]
+            if not selected_ids:
+                messagebox.showwarning("No Selection", "Please select at least one student checkbox to restore.", parent=dialog)
+                return
+            restored_result.extend(selected_ids)
+            dialog.destroy()
+
+        def _on_cancel():
+            dialog.destroy()
+
+        btn_confirm = tk.Button(action_bar, text="RESTORE SELECTED", bg="#28a745", fg="white", font=("Arial", 9, "bold"), command=_on_confirm)
+        btn_confirm.pack(side=tk.RIGHT, padx=4)
+
+        btn_cancel = tk.Button(action_bar, text="Cancel", bg="#6c757d", fg="white", font=("Arial", 9), command=_on_cancel)
+        btn_cancel.pack(side=tk.RIGHT, padx=4)
+
+        # Scrollable Frame containing student Checkbuttons (occupies remaining middle space)
+        list_container = ttk.Frame(dialog, padding=5)
+        list_container.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=15, pady=5)
+
+        canvas = tk.Canvas(list_container, highlightthickness=1, highlightbackground="#ced4da")
+        scroll = ttk.Scrollbar(list_container, orient=tk.VERTICAL, command=canvas.yview)
+        scroll_frame = ttk.Frame(canvas)
+
+        scroll_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scroll.set)
+
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Populate Checkbuttons for each student record in history
+        for rec in history_records:
+            sid = rec['id']
+            fn = rec.get('first_name', '')
+            ln = rec.get('last_name', '')
+            gr = rec.get('grade', '')
+
+            label_str = f"Student ID: {sid}"
+            if fn or ln:
+                label_str += f" | {fn} {ln}".strip()
+            if gr:
+                label_str += f" (Grade {gr})"
+
+            var = tk.BooleanVar(value=True)  # Checked by default
+            vars_map[sid] = var
+
+            chk = ttk.Checkbutton(scroll_frame, text=label_str, variable=var)
+            chk.pack(anchor=tk.W, pady=2, padx=5)
+
+        dialog.wait_window()
+
+        if not restored_result:
+            return
+
+        # Separate chosen records vs remaining unchosen history while preserving exact original chronological order
+        chosen_set = set(restored_result)
+        restored_records = [r for r in self.processed_history if r['id'] in chosen_set]
+        self.processed_history = [r for r in self.processed_history if r['id'] not in chosen_set]
+
+        restored_ids = [r['id'] for r in restored_records]
+        # Prepend back to student_ids and student_records in exact original chronological order
+        existing_set = set(self.student_ids)
+        new_ids = [r['id'] for r in restored_records if r['id'] not in existing_set]
+
+        self.student_ids = new_ids + self.student_ids
+        self.student_records = restored_records + [r for r in self.student_records if r['id'] not in set(new_ids)]
+
+        self._refresh_treeview_from_records()
+        count = len(self.student_ids)
+        self._update_progress_from_records()
+        self.lbl_found_count.config(text=f"{count} PHOTOGRAPHED STUDENTS REMAINING", foreground="#0066cc")
+
+        log_msg = f"Restored {len(restored_records)} previous student(s) back to top of list: {', '.join(restored_ids)}"
+        self.logger.log(log_msg)
+        messagebox.showinfo("Students Restored", f"Successfully restored {len(restored_records)} student(s) back to the top of the print queue:\n\n{', '.join(restored_ids)}")
 
     def _load_excel_file(self, file_path: str, append: bool = False):
         records, err = ExcelHandler.load_photographed_students(file_path)
@@ -1350,6 +1584,52 @@ class AppGUI:
             time.sleep(0.1)
 
         return res_var.get()
+
+    def _show_help_guide(self):
+        """Displays interactive User Guide dialog explaining all options and buttons."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Student Photo Print Automator - User Guide & Reference")
+        dialog.geometry("640x520")
+        dialog.transient(self.root)
+
+        txt_box = tk.Text(dialog, font=("Segoe UI", 9), wrap=tk.WORD)
+        scroll = ttk.Scrollbar(dialog, orient=tk.VERTICAL, command=txt_box.yview)
+        txt_box.config(yscrollcommand=scroll.set)
+
+        guide_text = (
+            "=========================================================\n"
+            "   STUDENT PHOTO PRINT AUTOMATOR - USER GUIDE & TIMING   \n"
+            "=========================================================\n\n"
+            "1. IMPORT MODES & FILE HANDLING\n"
+            "• Single Mode: Selects a single file (.xlsx / .csv / .zip sync archive) to load a new list.\n"
+            "• Multiple Mode: Allows selecting multiple files to merge/append into your current list.\n"
+            "• Save Remaining List: Exports unprinted students to a CSV/XLSX file if you stop early.\n"
+            "• Right-Click Menu: Right-click inside student list to Copy ID, Remove Selected, or Clear All.\n\n"
+            "2. AUTOMATION LOCATIONS (SELECT LOCATION)\n"
+            "• Student Search: Position mouse over the StudentSearch input box. Click 'Select Location' and wait 3s.\n"
+            "• Print Button: Position mouse over the target Print Button. Click 'Select Location' and wait 3s.\n\n"
+            "3. TIMING & CONFIGURATION OPTIONS\n"
+            "• Search Start Delay (s): Seconds to wait after clicking the search box before pasting Student ID.\n"
+            "• Max Search Wait (s): Maximum seconds to wait for StudentSearch verification to complete.\n"
+            "• Print Delay (s): Delay after clicking Print to allow Windows printer queue to register the job.\n"
+            "• Between Student Delay (s): Pause duration before advancing to the next student in sequence.\n"
+            "• Print Hotkey: Alternative key combo (e.g., 'ctrl+p') used if mouse click location is bypassed.\n"
+            "• Pause after every N cards: Automatically pauses batch execution after processing N cards.\n\n"
+            "4. PRINT QUEUE MONITORING & THROTTLING\n"
+            "• Printer Queue Dropdown: Select your target Windows printer (e.g. 'NullPrinter' or card printer).\n"
+            "• Thermometer Gauge: Color-coded real-time visualizer of active print jobs in queue.\n"
+            "• Sync Batch with Queue: When checked, batch automation automatically pauses whenever queue\n"
+            "  depth reaches 'Max Running Jobs' and resumes as soon as jobs clear.\n\n"
+            "5. SAFETY & EMERGENCY CONTROLS\n"
+            "• Emergency Stop: Press ESC key anytime or move mouse cursor to the upper-left screen corner.\n"
+            "• Dry Run: Runs full search & verification without clicking the final Print button.\n"
+        )
+
+        txt_box.insert(tk.END, guide_text)
+        txt_box.config(state=tk.DISABLED)
+
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        txt_box.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
     def _show_summary(self, total: int, printed: int, skipped: int, errors: int, elapsed: str):
         self.btn_start.config(state=tk.NORMAL)
