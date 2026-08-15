@@ -94,8 +94,8 @@ class AppGUI:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Student Photo Print Automator")
-        self.root.geometry("850x820")
-        self.root.minsize(800, 750)
+        self.root.geometry("850x700")
+        self.root.minsize(700, 500)
 
         self.config = AppConfig.load()
         self.logger = AppLogger(gui_callback=self.append_log)
@@ -116,9 +116,33 @@ class AppGUI:
         # Configure styles
         style = ttk.Style()
         style.theme_use('clam')
+
+        # Outer Canvas with Scrollbar for responsive window sizing across different screen resolution/DPI displays
+        container_canvas = tk.Canvas(self.root, highlightthickness=0)
+        v_scrollbar = ttk.Scrollbar(self.root, orient=tk.VERTICAL, command=container_canvas.yview)
         
-        main_frame = ttk.Frame(self.root, padding="10")
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        main_frame = ttk.Frame(container_canvas, padding="10")
+        main_frame.bind(
+            "<Configure>",
+            lambda e: container_canvas.configure(scrollregion=container_canvas.bbox("all"))
+        )
+
+        canvas_window = container_canvas.create_window((0, 0), window=main_frame, anchor="nw")
+
+        def _on_canvas_configure(event):
+            container_canvas.itemconfig(canvas_window, width=event.width)
+
+        container_canvas.bind("<Configure>", _on_canvas_configure)
+        container_canvas.configure(yscrollcommand=v_scrollbar.set)
+
+        # Mouse wheel scrolling support
+        def _on_mousewheel(event):
+            container_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        container_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+        v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        container_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # Title Banner
         title_label = ttk.Label(main_frame, text="STUDENT PHOTO PRINT AUTOMATOR", font=("Arial", 14, "bold"))
