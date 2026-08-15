@@ -1182,24 +1182,31 @@ class AppGUI:
                 rem_pause = max(0, pause_limit - batch_counter)
                 self.root.after(0, lambda r=rem_pause: self._update_pause_countdown(r))
 
-            # Compute average time per card and ETA after 5 cards processed
-            eta_str = "Calculating ETA..."
-            if completed_so_far > 5:
-                elapsed_sec = time.time() - start_time
-                avg_time_per_card = elapsed_sec / max(1, completed_so_far)
-                remaining_cards = len(self.student_ids)
-                est_remaining_sec = int(avg_time_per_card * remaining_cards)
+            # Compute dynamic ETA based on average job completion duration
+            min_t, max_t, avg_t = self.automation.get_job_timing_stats()
+            remaining_cards = len(self.student_ids)
 
+            if avg_t > 0:
+                est_remaining_sec = int(avg_t * remaining_cards)
                 hours = est_remaining_sec // 3600
                 minutes = (est_remaining_sec % 3600) // 60
                 seconds = est_remaining_sec % 60
 
                 if hours > 0:
-                    eta_str = f"ETA: {hours}h {minutes}m {seconds}s"
+                    eta_str = f"Estimated Time Remaining: {hours}h {minutes}m {seconds}s (Avg {avg_t:.1f}s/card)"
+                elif minutes > 0:
+                    eta_str = f"Estimated Time Remaining: {minutes}m {seconds}s (Avg {avg_t:.1f}s/card)"
                 else:
-                    eta_str = f"ETA: {minutes}m {seconds}s"
-            elif completed_so_far <= 5:
-                eta_str = f"ETA: Calibrating (processing first 5 cards...)"
+                    eta_str = f"Estimated Time Remaining: {seconds}s (Avg {avg_t:.1f}s/card)"
+            elif completed_so_far > 0:
+                elapsed_sec = time.time() - start_time
+                avg_sec = elapsed_sec / completed_so_far
+                est_remaining_sec = int(avg_sec * remaining_cards)
+                minutes = est_remaining_sec // 60
+                seconds = est_remaining_sec % 60
+                eta_str = f"Estimated Time Remaining: {minutes}m {seconds}s"
+            else:
+                eta_str = f"Estimated Time Remaining: Calibrating..."
 
             min_t, max_t, avg_t = self.automation.get_job_timing_stats()
             self._update_progress_ui(sid, eta_str, min_t, max_t, avg_t)
@@ -1214,6 +1221,8 @@ class AppGUI:
 
                 # Update live timing stats after job completion
                 new_min, new_max, new_avg = self.automation.get_job_timing_stats()
+                last_duration = self.automation.job_durations[-1] if self.automation.job_durations else 0.0
+                self.logger.log(f"Completed student {sid} in {last_duration:.1f}s | Stats: Min {new_min:.1f}s, Max {new_max:.1f}s, Avg {new_avg:.1f}s")
                 self._update_progress_ui(sid, eta_str, new_min, new_max, new_avg)
 
                 # Check auto-pause condition
