@@ -213,7 +213,12 @@ class AutomationController:
             root = auto.GetRootControl()
             for window in root.GetChildren():
                 if not window.IsOffscreen:
-                    for child in window.GetDescendants():
+                    try:
+                        descendants = window.GetDescendants() if hasattr(window, 'GetDescendants') else []
+                    except Exception:
+                        continue
+
+                    for child in descendants:
                         try:
                             c_name = str(child.Name).lower().strip()
                             c_type = str(child.ControlTypeName).lower().strip()
@@ -232,7 +237,7 @@ class AutomationController:
                         except Exception:
                             continue
         except Exception as e:
-            self.logger.error(f"UIAutomation search error: {e}")
+            pass
 
         return None
 

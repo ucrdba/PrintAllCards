@@ -1224,9 +1224,29 @@ class AppGUI:
         self._update_progress_from_records()
         self.lbl_found_count.config(text=f"{count} PHOTOGRAPHED STUDENTS REMAINING", foreground="#0066cc")
 
+        # Build formatted list with Name and Grade details
+        restored_details = []
+        for r in restored_records:
+            sid = r['id']
+            fn = r.get('first_name', '')
+            ln = r.get('last_name', '')
+            gr = r.get('grade', '')
+
+            item_str = f"• ID: {sid}"
+            if fn or ln:
+                item_str += f" | {fn} {ln}".strip()
+            if gr:
+                item_str += f" (Grade {gr})"
+            restored_details.append(item_str)
+
         log_msg = f"Restored {len(restored_records)} previous student(s) back to top of list: {', '.join(restored_ids)}"
         self.logger.log(log_msg)
-        messagebox.showinfo("Students Restored", f"Successfully restored {len(restored_records)} student(s) back to the top of the print queue:\n\n{', '.join(restored_ids)}")
+
+        details_str = "\n".join(restored_details)
+        messagebox.showinfo(
+            "Students Restored",
+            f"Successfully restored {len(restored_records)} student(s) back to the top of the print queue:\n\n{details_str}"
+        )
 
     def _load_excel_file(self, file_path: str, append: bool = False):
         records, err = ExcelHandler.load_photographed_students(file_path)
@@ -1295,9 +1315,9 @@ class AppGUI:
         if not self._save_ui_to_config():
             return
 
-        sel = self.student_listbox.curselection()
+        sel = self.student_tree.selection()
         if sel:
-            student_id = self.student_ids[sel[0]]
+            student_id = sel[0]
         elif self.student_ids:
             student_id = self.student_ids[0]
         else:
@@ -1359,6 +1379,13 @@ class AppGUI:
 
         if not messagebox.askyesno("Confirm Automation", msg):
             return
+
+        if self.is_processing:
+            if self.automation_thread and not self.automation_thread.is_alive():
+                # Previous thread finished or exited cleanly, reset state flag
+                self.is_processing = False
+            else:
+                return
 
         self.is_processing = True
         self.btn_start.config(state=tk.DISABLED)
