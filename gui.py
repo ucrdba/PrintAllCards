@@ -236,6 +236,16 @@ class AppGUI:
         self.student_tree.bind("<BackSpace>", lambda e: self._remove_selected_student())
         # Bind double-click to copy Student ID to clipboard (paste buffer)
         self.student_tree.bind("<Double-1>", self._on_student_double_click)
+        # Bind right-click to show context menu
+        self.student_tree.bind("<Button-3>", self._show_tree_context_menu)
+
+        # Right-click context menu
+        self.tree_context_menu = tk.Menu(self.root, tearoff=0)
+        self.tree_context_menu.add_command(label="📋 Copy Student ID", command=lambda: self._on_student_double_click(None))
+        self.tree_context_menu.add_command(label="🗑️ Remove Selected", command=self._remove_selected_student)
+        self.tree_context_menu.add_command(label="✂️ Delete Prior", command=self._remove_prior_students)
+        self.tree_context_menu.add_separator()
+        self.tree_context_menu.add_command(label="⚠️ Clear Entire List", command=self._clear_entire_student_list)
 
         # Backward-compatibility alias
         self.student_listbox = self.student_tree
@@ -810,9 +820,39 @@ class AppGUI:
         self.lbl_found_count.config(text=f"{count} PHOTOGRAPHED STUDENTS REMAINING", foreground="#0066cc")
         self.logger.log(f"Removed {len(removed_ids)} student ID(s) from list: {', '.join(removed_ids)}")
 
-    def _on_student_double_click(self, event):
-        """Copies the double-clicked student ID directly into the system clipboard / paste buffer."""
+    def _show_tree_context_menu(self, event):
+        """Displays right-click context menu over student Treeview."""
         item_id = self.student_tree.identify_row(event.y)
+        if item_id:
+            if item_id not in self.student_tree.selection():
+                self.student_tree.selection_set(item_id)
+        if hasattr(self, 'tree_context_menu'):
+            try:
+                self.tree_context_menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                self.tree_context_menu.grab_release()
+
+    def _clear_entire_student_list(self):
+        """Clears all student records and resets list GUI state after user confirmation."""
+        if not self.student_records:
+            return
+
+        if messagebox.askyesno("Clear Entire List", f"Are you sure you want to clear all {len(self.student_records)} student(s) from the list?"):
+            self.student_records = []
+            self.student_ids = []
+            self._refresh_treeview_from_records()
+            self.lbl_file_path.config(text="No file selected")
+            self.lbl_found_count.config(text="0 PHOTOGRAPHED STUDENTS FOUND", foreground="#0066cc")
+            self.initial_total_count = 0
+            self._update_progress_from_records()
+            self.logger.log("Cleared entire student list.")
+
+    def _on_student_double_click(self, event=None):
+        """Copies the double-clicked student ID directly into the system clipboard / paste buffer."""
+        if event:
+            item_id = self.student_tree.identify_row(event.y)
+        else:
+            item_id = None
         if not item_id:
             selected = self.student_tree.selection()
             if selected:
