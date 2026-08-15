@@ -1553,23 +1553,37 @@ class AppGUI:
 
         def _ask():
             dialog = tk.Toplevel(self.root)
-            dialog.title("Student Search Timeout")
-            dialog.geometry("400x200")
+            dialog.title("Automation Timeout / Application Error")
+            dialog.geometry("540x280")
+            dialog.minsize(460, 240)
             dialog.grab_set()
 
-            ttk.Label(dialog, text="Student Search Timeout", font=("Arial", 11, "bold"), foreground="red").pack(pady=5)
-            ttk.Label(dialog, text=f"Student ID: {student_id}\n\n{error_msg}").pack(pady=5)
-
+            # Dock Bottom Action Buttons Row FIRST (side=tk.BOTTOM) so buttons are guaranteed visible
             btn_box = ttk.Frame(dialog)
-            btn_box.pack(pady=15)
+            btn_box.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=15)
 
             def _choose(val):
                 res_var.set(val)
                 dialog.destroy()
 
-            ttk.Button(btn_box, text="Retry", command=lambda: _choose("retry")).pack(side=tk.LEFT, padx=5)
-            ttk.Button(btn_box, text="Skip", command=lambda: _choose("skip")).pack(side=tk.LEFT, padx=5)
-            ttk.Button(btn_box, text="Stop", command=lambda: _choose("stop")).pack(side=tk.LEFT, padx=5)
+            btn_stop = tk.Button(btn_box, text="STOP", bg="#dc3545", fg="white", font=("Arial", 10, "bold"), width=10, command=lambda: _choose("stop"))
+            btn_stop.pack(side=tk.RIGHT, padx=5)
+
+            btn_skip = tk.Button(btn_box, text="SKIP", bg="#ffc107", fg="black", font=("Arial", 10, "bold"), width=10, command=lambda: _choose("skip"))
+            btn_skip.pack(side=tk.RIGHT, padx=5)
+
+            btn_retry = tk.Button(btn_box, text="RETRY", bg="#28a745", fg="white", font=("Arial", 10, "bold"), width=10, command=lambda: _choose("retry"))
+            btn_retry.pack(side=tk.RIGHT, padx=5)
+
+            # Top Content Header & Details
+            top_frame = ttk.Frame(dialog, padding=15)
+            top_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+            ttk.Label(top_frame, text="⚠️ Application / Search Warning", font=("Arial", 11, "bold"), foreground="#dc3545").pack(anchor=tk.W, pady=(0, 6))
+            ttk.Label(top_frame, text=f"Student ID: {student_id}", font=("Arial", 10, "bold"), foreground="#0066cc").pack(anchor=tk.W, pady=(0, 6))
+
+            msg_label = ttk.Label(top_frame, text=error_msg, font=("Arial", 10), wraplength=490, justify=tk.LEFT)
+            msg_label.pack(anchor=tk.W, fill=tk.BOTH, expand=True)
 
             dialog.wait_window()
 

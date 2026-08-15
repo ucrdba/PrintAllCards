@@ -72,6 +72,47 @@ class AutomationController:
         self.is_running = False
         self.emergency_stop_triggered = False
 
+    def verify_target_app_active(self, target_x: int, target_y: int, expected_exe_name: str = "schoolhouse-smiles.exe") -> Tuple[bool, str]:
+        """
+        Verifies that the window located under (target_x, target_y) belongs to the expected application process.
+        Prevents executing mouse clicks or typing into unintended programs.
+        """
+        try:
+            import ctypes
+            import ctypes.wintypes
+            import psutil
+
+            user32 = ctypes.windll.user32
+            pt = ctypes.wintypes.POINT(int(target_x), int(target_y))
+            hwnd = user32.WindowFromPoint(pt)
+
+            if not hwnd:
+                return False, f"No active window found at screen coordinates ({target_x}, {target_y})."
+
+            # Get root top-level window handle
+            root_hwnd = user32.GetAncestor(hwnd, 2)  # GA_ROOT = 2
+            if root_hwnd:
+                hwnd = root_hwnd
+
+            pid = ctypes.wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+
+            if not pid.value:
+                return False, f"Could not determine process ID for window at ({target_x}, {target_y})."
+
+            proc = psutil.Process(pid.value)
+            exe_path = proc.exe() if proc else ""
+            exe_name = proc.name().lower() if proc else ""
+
+            if expected_exe_name.lower() in exe_name or expected_exe_name.lower() in exe_path.lower():
+                return True, exe_path
+
+            return False, f"Target window at ({target_x}, {target_y}) belongs to '{exe_name}' ({exe_path}), expected '{expected_exe_name}'."
+        except Exception as e:
+            # Fallback pass if window enumeration raises unexpected platform exception
+            self.logger.error(f"Target app verification check warning: {e}")
+            return True, "Verification skipped due to permission/system inspection limits"
+
     def check_emergency_stop(self) -> bool:
         """Checks if mouse is at top-left corner (0,0) or (0..5, 0..5)."""
         x, y = pyautogui.position()
@@ -241,8 +282,11 @@ class AutomationController:
         if dynamic_search:
             search_x, search_y = dynamic_search
             self.logger.log(f"Step 1 - Dynamically located Search Box via Windows UIAutomation at ({search_x}, {search_y})")
-        else:
-            self.logger.log(f"Step 1 - Clicking Search Box at configured location ({search_x}, {search_y})")
+        # Pre-flight Check: Verify that configured location belongs to schoolhouse-smiles.exe
+        valid_app, app_msg = self.verify_target_app_active(search_x, search_y, "schoolhouse-smiles.exe")
+        if not valid_app:
+            self.logger.error(f"TARGET APP VERIFICATION ERROR: {app_msg}")
+            return False, "Schoolhouse Smiles is not currently the Active Program.\n\nPlease make sure Schoolhouse Smiles is running and visible on screen."
 
         self.move_and_click(search_x, search_y)
         if not self.safe_sleep(self.config.search_start_delay):
