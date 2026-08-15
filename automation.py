@@ -32,6 +32,9 @@ class AutomationController:
         self.current_student = ""
         self.emergency_stop_triggered = False
 
+        self.job_durations: List[float] = []
+        self.get_queue_job_count: Optional[Callable[[], int]] = None
+
         self.key_listener = None
         self._start_keyboard_listener()
 
@@ -50,6 +53,18 @@ class AutomationController:
         self.key_listener = keyboard.Listener(on_press=on_press)
         self.key_listener.daemon = True
         self.key_listener.start()
+
+    def reset_job_durations(self):
+        self.job_durations = []
+
+    def get_job_timing_stats(self) -> Tuple[float, float, float]:
+        """Returns (min_time, max_time, avg_time) for completed jobs in seconds."""
+        if not self.job_durations:
+            return 0.0, 0.0, 0.0
+        min_t = min(self.job_durations)
+        max_t = max(self.job_durations)
+        avg_t = sum(self.job_durations) / len(self.job_durations)
+        return min_t, max_t, avg_t
 
     def reset_controls(self):
         self.stop_event.clear()
@@ -192,6 +207,23 @@ class AutomationController:
         if not self.wait_if_paused_or_stopped():
             return False, "Process stopped by user"
 
+        # Step 0: Check Print Queue Sync gating threshold if enabled
+        if not is_test and getattr(self.config, 'enable_queue_sync', False) and callable(self.get_queue_job_count):
+            max_jobs = getattr(self.config, 'max_queue_jobs', 5)
+            while True:
+                if self.stop_event.is_set():
+                    return False, "Process stopped by user"
+
+                cur_jobs = self.get_queue_job_count()
+                if cur_jobs < max_jobs:
+                    break
+
+                self.logger.log(f"[QUEUE SYNC] Print queue count is {cur_jobs} (Limit: {max_jobs}). Pausing automation until queue drops below {max_jobs}...")
+                if not self.safe_sleep(1.0):
+                    return False, "Interrupted"
+
+        job_start_t = time.time()
+
         # Step 1: Click Search location
         search_x, search_y = self.config.search_x, self.config.search_y
 
@@ -282,11 +314,13 @@ class AutomationController:
                 else:
                     pyautogui.press(hk[0])
 
-            if not self.safe_sleep(self.config.print_delay):
-                return False, "Interrupted during print delay"
 
         if not self.safe_sleep(self.config.between_student_delay):
             return False, "Interrupted"
+
+        if not is_test:
+            duration = time.time() - job_start_t
+            self.job_durations.append(duration)
 
         return True, ""
 

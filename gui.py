@@ -100,6 +100,7 @@ class AppGUI:
         self.config = AppConfig.load()
         self.logger = AppLogger(gui_callback=self.append_log)
         self.automation = AutomationController(self.config, self.logger)
+        self.automation.get_queue_job_count = self._get_current_queue_job_count
 
         self.student_ids: List[str] = []
         self.initial_total_count = 0
@@ -402,9 +403,29 @@ class AppGUI:
         self.lbl_queue_status = ttk.Label(q_info_frame, text="Printer Status: Ready / Idle", font=("Arial", 9))
         self.lbl_queue_status.pack(anchor=tk.W, pady=2)
 
+        self.lbl_queue_timing = ttk.Label(q_info_frame, text="⏱️ Job Timing: Min: -- | Max: -- | Avg: --", font=("Arial", 9, "bold"), foreground="#28a745")
+        self.lbl_queue_timing.pack(anchor=tk.W, pady=(4, 2))
+
         self.var_auto_poll_queue = tk.BooleanVar(value=True)
         chk_poll = ttk.Checkbutton(q_info_frame, text="Auto-Monitor Queue (1s)", variable=self.var_auto_poll_queue)
-        chk_poll.pack(anchor=tk.W, pady=(10, 0))
+        chk_poll.pack(anchor=tk.W, pady=(4, 0))
+
+        # --- Queue Batch Sync Throttling Controls ---
+        q_sync_box = ttk.Frame(q_info_frame)
+        q_sync_box.pack(anchor=tk.W, pady=(6, 0))
+
+        self.var_queue_sync = tk.BooleanVar(value=getattr(self.config, 'enable_queue_sync', True))
+        chk_sync = ttk.Checkbutton(q_sync_box, text="Sync Batch with Queue (Pause when full)", variable=self.var_queue_sync, command=self._save_queue_sync_settings)
+        chk_sync.pack(anchor=tk.W)
+
+        q_thresh_row = ttk.Frame(q_sync_box)
+        q_thresh_row.pack(anchor=tk.W, pady=(2, 0))
+
+        ttk.Label(q_thresh_row, text="Max Running Jobs: ", font=("Arial", 9)).pack(side=tk.LEFT)
+        self.ent_max_jobs = ttk.Entry(q_thresh_row, width=5, justify="center", font=("Arial", 9, "bold"))
+        self.ent_max_jobs.pack(side=tk.LEFT, padx=2)
+        self.ent_max_jobs.bind("<KeyRelease>", lambda e: self._save_queue_sync_settings())
+        ttk.Label(q_thresh_row, text="jobs", font=("Arial", 9)).pack(side=tk.LEFT)
 
         btn_poll_now = ttk.Button(q_info_frame, text="Check Queue Now", command=self._poll_print_queue)
         btn_poll_now.pack(anchor=tk.W, pady=(5, 0))
@@ -470,6 +491,12 @@ class AppGUI:
         self.lbl_eta = ttk.Label(lbl_status_box, text="Estimated Time Remaining: --", font=("Arial", 9, "bold"), foreground="#0066cc")
         self.lbl_eta.pack(side=tk.RIGHT)
 
+        lbl_timing_box = ttk.Frame(prog_frame)
+        lbl_timing_box.pack(fill=tk.X, pady=(4, 0))
+
+        self.lbl_timing_stats = ttk.Label(lbl_timing_box, text="⏱️ Job Timing: Min: -- | Max: -- | Avg: --", font=("Arial", 9, "bold"), foreground="#28a745")
+        self.lbl_timing_stats.pack(anchor=tk.W)
+
         # --- SECTION 7: LOG WINDOW ---
         log_frame = ttk.LabelFrame(main_frame, text="LOG", padding="8")
         log_frame.pack(fill=tk.BOTH, expand=True, pady=5)
@@ -494,6 +521,10 @@ class AppGUI:
         pause_val = getattr(self.config, 'pause_after_cards', 0)
         self.ent_pause_after.insert(0, str(pause_val))
         self._update_pause_countdown(pause_val)
+
+        if hasattr(self, 'ent_max_jobs'):
+            self.ent_max_jobs.delete(0, tk.END)
+            self.ent_max_jobs.insert(0, str(getattr(self.config, 'max_queue_jobs', 5)))
 
         self._refresh_printer_list()
         self._start_queue_polling_loop()
@@ -599,6 +630,13 @@ class AppGUI:
             self.config.require_verification = self.var_require_verification.get()
             self.config.enable_mouse_trail = self.var_mouse_trail.get()
             self.config.dry_run = self.var_dry_run.get()
+
+            if hasattr(self, 'var_queue_sync'):
+                self.config.enable_queue_sync = self.var_queue_sync.get()
+            if hasattr(self, 'ent_max_jobs'):
+                m_jobs = self.ent_max_jobs.get().strip()
+                if m_jobs:
+                    self.config.max_queue_jobs = max(1, int(m_jobs))
 
             # Validation
             if self.config.search_start_delay < 0 or self.config.max_search_wait < 0 or self.config.print_delay < 0 or self.config.between_student_delay < 0 or self.config.pause_after_cards < 0:
@@ -1129,6 +1167,7 @@ class AppGUI:
         errors = 0
         batch_counter = 0
         start_time = time.time()
+        self.automation.reset_job_durations()
 
         while self.student_ids:
             if self.automation.stop_event.is_set():
@@ -1162,7 +1201,8 @@ class AppGUI:
             elif completed_so_far <= 5:
                 eta_str = f"ETA: Calibrating (processing first 5 cards...)"
 
-            self._update_progress_ui(sid, eta_str)
+            min_t, max_t, avg_t = self.automation.get_job_timing_stats()
+            self._update_progress_ui(sid, eta_str, min_t, max_t, avg_t)
             self.logger.log(f"Processing student {sid} ({completed_so_far + 1}/{start_total})")
 
             success, msg = self.automation.process_single_student(sid)
@@ -1171,6 +1211,10 @@ class AppGUI:
                 printed += 1
                 batch_counter += 1
                 self._pop_student(sid)
+
+                # Update live timing stats after job completion
+                new_min, new_max, new_avg = self.automation.get_job_timing_stats()
+                self._update_progress_ui(sid, eta_str, new_min, new_max, new_avg)
 
                 # Check auto-pause condition
                 if pause_limit > 0:
@@ -1234,13 +1278,21 @@ class AppGUI:
         if hasattr(self, 'progress_bar'):
             self.progress_bar['value'] = pct
 
-    def _update_progress_ui(self, student_id: str, eta_str: str = ""):
+    def _update_progress_ui(self, student_id: str, eta_str: str = "", min_t: float = 0.0, max_t: float = 0.0, avg_t: float = 0.0):
         def _upd():
             self.lbl_curr_student.config(text=f"Current Student: {student_id}")
             self._update_progress_from_records()
             self.lbl_status.config(text=f"Status: Processing {student_id}...")
             if eta_str:
                 self.lbl_eta.config(text=eta_str)
+            if hasattr(self, 'lbl_timing_stats'):
+                if min_t > 0 or max_t > 0 or avg_t > 0:
+                    timing_txt = f"⏱️ Job Timing: Min: {min_t:.1f}s | Max: {max_t:.1f}s | Avg: {avg_t:.1f}s"
+                else:
+                    timing_txt = "⏱️ Job Timing: Min: -- | Max: -- | Avg: --"
+                self.lbl_timing_stats.config(text=timing_txt)
+                if hasattr(self, 'lbl_queue_timing'):
+                    self.lbl_queue_timing.config(text=timing_txt)
         self.root.after(0, _upd)
 
     def _prompt_timeout_dialog(self, student_id: str, error_msg: str) -> str:
@@ -1286,12 +1338,16 @@ class AppGUI:
         self.lbl_status.config(text="Status: Complete")
         self.lbl_curr_student.config(text="Current Student: None")
 
+        min_t, max_t, avg_t = self.automation.get_job_timing_stats()
+        timing_summary = f"Job Durations:        Min: {min_t:.1f}s | Max: {max_t:.1f}s | Avg: {avg_t:.1f}s" if min_t > 0 else "Job Durations:        N/A"
+
         summary_msg = (
             f"Printing Complete\n\n"
             f"Total Students:       {total}\n"
             f"Successfully Printed: {printed}\n"
             f"Skipped:              {skipped}\n"
-            f"Errors:               {errors}\n\n"
+            f"Errors:               {errors}\n"
+            f"{timing_summary}\n\n"
             f"Elapsed Time: {elapsed}"
         )
         self.logger.log("==========================================")
@@ -1343,6 +1399,36 @@ class AppGUI:
             self.config.save()
             self.lbl_queue_printer.config(text=f"Selected: {selected}")
             self._poll_print_queue()
+
+    def _save_queue_sync_settings(self):
+        """Saves Queue Sync toggle state and Max Running Jobs threshold to AppConfig."""
+        if hasattr(self, 'var_queue_sync'):
+            self.config.enable_queue_sync = self.var_queue_sync.get()
+
+        if hasattr(self, 'ent_max_jobs'):
+            try:
+                val_str = self.ent_max_jobs.get().strip()
+                if val_str:
+                    self.config.max_queue_jobs = max(1, int(val_str))
+            except ValueError:
+                pass
+
+        self.config.save()
+
+    def _get_current_queue_job_count(self) -> int:
+        """Returns active printer queue job count synchronously for AutomationController gating."""
+        if not win32print:
+            return 0
+        printer_name = self.config.selected_printer or "NullPrinter"
+        try:
+            h_printer = win32print.OpenPrinter(printer_name)
+            try:
+                p_info = win32print.GetPrinter(h_printer, 2)
+                return p_info.get('cJobs', 0)
+            finally:
+                win32print.ClosePrinter(h_printer)
+        except Exception:
+            return 0
 
     def _poll_print_queue(self):
         """Polls the active printer queue job count and status using win32print."""
