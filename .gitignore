@@ -1,0 +1,21 @@
+# PyInstaller / Build outputs
+dist/
+build/
+*.spec.bak
+
+# Python byte-compiled / environment
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.env
+
+# User / IDE configurations
+.vscode/
+.idea/
+*.swp
+*.tmp
+*.log
+config.json
