@@ -1,0 +1,29 @@
+# STUDENT PHOTO PRINT AUTOMATOR - USER GUIDE & MANUAL
+
+## 1. IMPORT MODES & FILE HANDLING
+- **Single Mode**: Selects a single file (.xlsx / .csv / .zip sync archive) to load a new student list.
+- **Multiple Mode**: Allows selecting multiple files to merge/append into your active student list.
+- **Save Remaining List**: Exports unprinted students to a CSV/XLSX file if you stop early.
+- **Restore Previous N**: Opens an interactive checkbox dialog to restore deleted or printed cards back to top of queue.
+- **Right-Click Menu**: Right-click anywhere inside the list to Copy ID, Remove Selected, Delete Prior, or Clear All.
+
+## 2. AUTOMATION LOCATIONS (SELECT LOCATION)
+- **Student Search**: Position mouse over the StudentSearch input box. Click 'Select Location' and wait 3s.
+- **Print Button**: Position mouse over the target Print Button. Click 'Select Location' and wait 3s.
+
+## 3. TIMING & CONFIGURATION OPTIONS
+- **Search Start Delay (s)**: Delay (in seconds) after clicking the search box before pasting Student ID.
+- **Max Search Wait (s)**: Maximum seconds to wait for StudentSearch verification to complete.
+- **Print Delay (s)**: Delay after clicking Print to allow Windows printer queue to register the job.
+- **Between Student Delay (s)**: Pause duration before advancing to the next student in sequence.
+- **Print Hotkey**: Alternative keyboard shortcut (e.g. 'ctrl+p') used if mouse click location is bypassed.
+- **Pause after every N cards**: Automatically pauses batch execution after processing N cards.
+
+## 4. PRINT QUEUE MONITORING & THROTTLING
+- **Printer Queue Dropdown**: Select your target Windows printer (e.g. 'NullPrinter' or card printer).
+- **Thermometer Gauge**: Color-coded real-time visualizer showing active print jobs in queue.
+- **Sync Batch with Queue**: When checked, batch automation automatically pauses whenever queue depth reaches 'Max Running Jobs' and resumes as soon as jobs clear.
+
+## 5. SAFETY & EMERGENCY CONTROLS
+- **Emergency Stop**: Press ESC key anytime or move mouse cursor to the upper-left screen corner.
+- **Dry Run**: Simulates card search and verification without clicking the final Print button.

@@ -2,7 +2,7 @@
 import os
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('app_icon.ico', '.'), ('app_icon.png', '.')]
+datas = [('app_icon.ico', '.'), ('app_icon.png', '.'), ('User_Guide.txt', '.')]
 binaries = []
 hiddenimports = ['win32print', 'win32gui', 'win32con', 'PIL._tkinter_finder']
 
@@ -24,7 +24,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['llvmlite', 'numba', 'scipy', 'matplotlib', 'pandas.tests', 'pytest', 'unittest'],
+    excludes=['llvmlite', 'numba', 'scipy', 'matplotlib', 'pygame', 'pandas.tests', 'numpy.f2py.tests', 'pytest', 'unittest'],
     noarchive=False,
     optimize=0,
 )
