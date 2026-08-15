@@ -1589,43 +1589,68 @@ class AppGUI:
         """Displays interactive User Guide dialog explaining all options and buttons."""
         dialog = tk.Toplevel(self.root)
         dialog.title("Student Photo Print Automator - User Guide & Reference")
-        dialog.geometry("640x520")
+        dialog.geometry("780x600")
+        dialog.minsize(600, 450)
         dialog.transient(self.root)
 
-        txt_box = tk.Text(dialog, font=("Segoe UI", 9), wrap=tk.WORD)
-        scroll = ttk.Scrollbar(dialog, orient=tk.VERTICAL, command=txt_box.yview)
+        # Header Title Bar
+        header = ttk.Frame(dialog, padding=(15, 12, 15, 8))
+        header.pack(fill=tk.X)
+        ttk.Label(header, text="STUDENT PHOTO PRINT AUTOMATOR - USER GUIDE", font=("Arial", 12, "bold"), foreground="#0066cc").pack(anchor=tk.W)
+        ttk.Label(header, text="Comprehensive operational instructions, timing options, and queue controls", font=("Arial", 9, "italic"), foreground="#6c757d").pack(anchor=tk.W, pady=(2, 0))
+
+        # Main content container with outer padding margins
+        content_frame = ttk.Frame(dialog, padding=(15, 5, 15, 15))
+        content_frame.pack(fill=tk.BOTH, expand=True)
+
+        txt_box = tk.Text(content_frame, font=("Segoe UI", 10), wrap=tk.WORD, bg="#ffffff", fg="#212529", relief=tk.SOLID, borderwidth=1, padx=15, pady=12)
+        scroll = ttk.Scrollbar(content_frame, orient=tk.VERTICAL, command=txt_box.yview)
         txt_box.config(yscrollcommand=scroll.set)
 
-        guide_text = (
-            "=========================================================\n"
-            "   STUDENT PHOTO PRINT AUTOMATOR - USER GUIDE & TIMING   \n"
-            "=========================================================\n\n"
-            "1. IMPORT MODES & FILE HANDLING\n"
-            "• Single Mode: Selects a single file (.xlsx / .csv / .zip sync archive) to load a new list.\n"
-            "• Multiple Mode: Allows selecting multiple files to merge/append into your current list.\n"
-            "• Save Remaining List: Exports unprinted students to a CSV/XLSX file if you stop early.\n"
-            "• Right-Click Menu: Right-click inside student list to Copy ID, Remove Selected, or Clear All.\n\n"
-            "2. AUTOMATION LOCATIONS (SELECT LOCATION)\n"
-            "• Student Search: Position mouse over the StudentSearch input box. Click 'Select Location' and wait 3s.\n"
-            "• Print Button: Position mouse over the target Print Button. Click 'Select Location' and wait 3s.\n\n"
-            "3. TIMING & CONFIGURATION OPTIONS\n"
-            "• Search Start Delay (s): Seconds to wait after clicking the search box before pasting Student ID.\n"
-            "• Max Search Wait (s): Maximum seconds to wait for StudentSearch verification to complete.\n"
-            "• Print Delay (s): Delay after clicking Print to allow Windows printer queue to register the job.\n"
-            "• Between Student Delay (s): Pause duration before advancing to the next student in sequence.\n"
-            "• Print Hotkey: Alternative key combo (e.g., 'ctrl+p') used if mouse click location is bypassed.\n"
-            "• Pause after every N cards: Automatically pauses batch execution after processing N cards.\n\n"
-            "4. PRINT QUEUE MONITORING & THROTTLING\n"
-            "• Printer Queue Dropdown: Select your target Windows printer (e.g. 'NullPrinter' or card printer).\n"
-            "• Thermometer Gauge: Color-coded real-time visualizer of active print jobs in queue.\n"
-            "• Sync Batch with Queue: When checked, batch automation automatically pauses whenever queue\n"
-            "  depth reaches 'Max Running Jobs' and resumes as soon as jobs clear.\n\n"
-            "5. SAFETY & EMERGENCY CONTROLS\n"
-            "• Emergency Stop: Press ESC key anytime or move mouse cursor to the upper-left screen corner.\n"
-            "• Dry Run: Runs full search & verification without clicking the final Print button.\n"
-        )
+        # Configure styled text tags for headings and bold labels
+        txt_box.tag_config("h1", font=("Segoe UI", 11, "bold"), foreground="#0066cc", spacing1=12, spacing3=4)
+        txt_box.tag_config("bullet", lmargin1=15, lmargin2=30, spacing1=3, spacing3=3)
+        txt_box.tag_config("bold", font=("Segoe UI", 10, "bold"))
 
-        txt_box.insert(tk.END, guide_text)
+        sections = [
+            ("1. IMPORT MODES & FILE HANDLING", [
+                ("Single Mode", "Selects a single file (.xlsx / .csv / .zip sync archive) to load a new student list."),
+                ("Multiple Mode", "Allows selecting multiple files to merge/append into your active student list."),
+                ("Save Remaining List", "Exports unprinted students to a CSV/XLSX file if you stop early."),
+                ("Restore Previous N", "Opens an interactive checkbox dialog to restore deleted or printed cards back to top of queue."),
+                ("Right-Click Menu", "Right-click anywhere inside the list to Copy ID, Remove Selected, Delete Prior, or Clear All.")
+            ]),
+            ("2. AUTOMATION LOCATIONS (SELECT LOCATION)", [
+                ("Student Search", "Position mouse over the StudentSearch input box. Click 'Select Location' and wait 3s."),
+                ("Print Button", "Position mouse over the target Print Button. Click 'Select Location' and wait 3s.")
+            ]),
+            ("3. TIMING & CONFIGURATION OPTIONS", [
+                ("Search Start Delay (s)", "Delay (in seconds) after clicking the search box before pasting Student ID."),
+                ("Max Search Wait (s)", "Maximum seconds to wait for StudentSearch verification to complete."),
+                ("Print Delay (s)", "Delay after clicking Print to allow Windows printer queue to register the job."),
+                ("Between Student Delay (s)", "Pause duration before advancing to the next student in sequence."),
+                ("Print Hotkey", "Alternative keyboard shortcut (e.g. 'ctrl+p') used if mouse click location is bypassed."),
+                ("Pause after every N cards", "Automatically pauses batch execution after processing N cards.")
+            ]),
+            ("4. PRINT QUEUE MONITORING & THROTTLING", [
+                ("Printer Queue Dropdown", "Select your target Windows printer (e.g. 'NullPrinter' or card printer)."),
+                ("Thermometer Gauge", "Color-coded real-time visualizer showing active print jobs in queue."),
+                ("Sync Batch with Queue", "When checked, batch automation automatically pauses whenever queue depth reaches 'Max Running Jobs' and resumes as soon as jobs clear.")
+            ]),
+            ("5. SAFETY & EMERGENCY CONTROLS", [
+                ("Emergency Stop", "Press ESC key anytime or move mouse cursor to the upper-left screen corner."),
+                ("Dry Run", "Simulates card search and verification without clicking the final Print button.")
+            ])
+        ]
+
+        for sec_title, items in sections:
+            txt_box.insert(tk.END, f"{sec_title}\n", "h1")
+            for label, desc in items:
+                idx_start = txt_box.index(tk.END)
+                txt_box.insert(tk.END, f"• {label}: ", "bullet")
+                txt_box.tag_add("bold", idx_start, f"{idx_start}+{len(label)+4}c")
+                txt_box.insert(tk.END, f"{desc}\n", "bullet")
+
         txt_box.config(state=tk.DISABLED)
 
         scroll.pack(side=tk.RIGHT, fill=tk.Y)
