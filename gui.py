@@ -138,20 +138,43 @@ class AppGUI:
         excel_frame = ttk.LabelFrame(left_pane, text="EXCEL FILE & STUDENTS", padding="8")
         excel_frame.pack(fill=tk.BOTH, expand=True)
 
-        file_btn_frame = ttk.Frame(excel_frame)
-        file_btn_frame.pack(fill=tk.X, pady=2)
-        
-        self.btn_sync_zip = ttk.Button(file_btn_frame, text="Import Sync File", command=self._select_sync_zip_file)
-        self.btn_sync_zip.pack(side=tk.RIGHT, padx=2)
+        # Toolbar Card: Import Action Buttons (Top) & Radiobuttons directly underneath (Right-aligned)
+        toolbar = ttk.Frame(excel_frame)
+        toolbar.pack(fill=tk.X, pady=(0, 6))
 
-        self.btn_excel = ttk.Button(file_btn_frame, text="SelectPhotographed List", command=self._select_excel_file)
-        self.btn_excel.pack(side=tk.RIGHT, padx=2)
-        
-        self.lbl_file_path = ttk.Label(file_btn_frame, text="No file selected", font=("Arial", 8), foreground="gray")
+        # Row 1: Loaded File status on left, Import Buttons on right
+        row1 = ttk.Frame(toolbar)
+        row1.pack(fill=tk.X, pady=(0, 2))
+
+        ttk.Label(row1, text="📄 Loaded File:", font=("Arial", 8, "bold"), foreground="#495057").pack(side=tk.LEFT, padx=(0, 4))
+        self.lbl_file_path = ttk.Label(row1, text="No file selected", font=("Arial", 8), foreground="#6c757d")
         self.lbl_file_path.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
+        btn_box = ttk.Frame(row1)
+        btn_box.pack(side=tk.RIGHT)
+
+        self.btn_excel = ttk.Button(btn_box, text="Import Excel/CSV", command=self._select_excel_file)
+        self.btn_excel.pack(side=tk.LEFT, padx=2)
+
+        self.btn_sync_zip = ttk.Button(btn_box, text="Import Sync File(s)", command=self._select_sync_zip_file)
+        self.btn_sync_zip.pack(side=tk.LEFT, padx=2)
+
+        # Row 2: Radiobuttons placed directly under the two import buttons (right-aligned)
+        row2 = ttk.Frame(toolbar)
+        row2.pack(fill=tk.X, pady=(2, 0))
+
+        radio_box = ttk.Frame(row2)
+        radio_box.pack(side=tk.RIGHT, padx=2)
+
+        ttk.Label(radio_box, text="Mode:", font=("Arial", 8, "bold")).pack(side=tk.LEFT, padx=(0, 2))
+        self.var_import_mode = tk.StringVar(value="single")
+        rb_single = ttk.Radiobutton(radio_box, text="Single", value="single", variable=self.var_import_mode)
+        rb_single.pack(side=tk.LEFT, padx=3)
+        rb_append = ttk.Radiobutton(radio_box, text="Multiple", value="append", variable=self.var_import_mode)
+        rb_append.pack(side=tk.LEFT, padx=3)
+
         self.lbl_found_count = ttk.Label(excel_frame, text="0 PHOTOGRAPHED STUDENTS FOUND", font=("Arial", 9, "bold"), foreground="#0066cc")
-        self.lbl_found_count.pack(anchor=tk.W, pady=5)
+        self.lbl_found_count.pack(anchor=tk.W, pady=(4, 6))
 
         # Quick Search / Filter Bar for Student List
         filter_box = ttk.Frame(excel_frame)
@@ -650,37 +673,77 @@ class AppGUI:
             if query:
                 self._on_filter_list_changed()
 
-    def _load_sync_zip_file(self, file_path: str):
-        self.lbl_file_path.config(text=os.path.basename(file_path))
+    def _select_sync_zip_file(self):
+        is_multiple = (getattr(self, 'var_import_mode', None) and self.var_import_mode.get() == "append")
+
+        if is_multiple:
+            file_paths = filedialog.askopenfilenames(
+                title="Select Sync Zip File(s) to Append",
+                filetypes=[("Zip Archives", "*.zip"), ("All Files", "*.*")]
+            )
+            if file_paths:
+                for fp in file_paths:
+                    self._load_sync_zip_file(fp, append=True)
+        else:
+            file_path = filedialog.askopenfilename(
+                title="Select Sync Zip File",
+                filetypes=[("Zip Archives", "*.zip"), ("All Files", "*.*")]
+            )
+            if file_path:
+                self._load_sync_zip_file(file_path, append=False)
+
+    def _load_sync_zip_file(self, file_path: str, append: bool = False):
         records, err = ExcelHandler.load_sync_zip(file_path)
 
-        for row in self.student_tree.get_children():
-            self.student_tree.delete(row)
-
         if err:
-            self.student_records = []
-            self.student_ids = []
-            self.lbl_found_count.config(text="0 PHOTOGRAPHED STUDENTS FOUND", foreground="red")
+            if not append:
+                self.student_records = []
+                self.student_ids = []
+                self._refresh_treeview_from_records()
+                self.lbl_found_count.config(text="0 PHOTOGRAPHED STUDENTS FOUND", foreground="red")
             self.logger.error(err)
             messagebox.showerror("Sync Zip Error", err)
             return
 
-        self.student_records = records
-        self._refresh_treeview_from_records()
+        if append:
+            existing_ids = {r['id'] for r in self.student_records}
+            added_count = 0
+            for r in records:
+                if r['id'] not in existing_ids:
+                    self.student_records.append(r)
+                    existing_ids.add(r['id'])
+                    added_count += 1
+            self.lbl_file_path.config(text=f"Appended {os.path.basename(file_path)}")
+            self.logger.log(f"Appended Sync Zip: {os.path.basename(file_path)} ({added_count} new students added, total {len(self.student_records)})")
+        else:
+            self.lbl_file_path.config(text=os.path.basename(file_path))
+            self.student_records = records
+            self.logger.log(f"Imported Sync Zip: {os.path.basename(file_path)} ({len(records)} photographed students loaded)")
 
+        self._refresh_treeview_from_records()
         count = len(self.student_ids)
         self.initial_total_count = count
         self._update_progress_from_records()
         self.lbl_found_count.config(text=f"{count} PHOTOGRAPHED STUDENTS FOUND", foreground="#0066cc")
-        self.logger.log(f"Imported Sync Zip: {os.path.basename(file_path)} ({count} photographed students loaded)")
 
     def _select_excel_file(self):
-        file_path = filedialog.askopenfilename(
-            title="Select Excel or CSV File",
-            filetypes=[("Data Files", "*.xlsx *.xls *.csv"), ("Excel Files", "*.xlsx *.xls"), ("CSV Files", "*.csv"), ("All Files", "*.*")]
-        )
-        if file_path:
-            self._load_excel_file(file_path)
+        is_multiple = (getattr(self, 'var_import_mode', None) and self.var_import_mode.get() == "append")
+
+        if is_multiple:
+            file_paths = filedialog.askopenfilenames(
+                title="Select Excel or CSV File(s) to Append",
+                filetypes=[("Data Files", "*.xlsx *.xls *.csv"), ("Excel Files", "*.xlsx *.xls"), ("CSV Files", "*.csv"), ("All Files", "*.*")]
+            )
+            if file_paths:
+                for fp in file_paths:
+                    self._load_excel_file(fp, append=True)
+        else:
+            file_path = filedialog.askopenfilename(
+                title="Select Excel or CSV File",
+                filetypes=[("Data Files", "*.xlsx *.xls *.csv"), ("Excel Files", "*.xlsx *.xls"), ("CSV Files", "*.csv"), ("All Files", "*.*")]
+            )
+            if file_path:
+                self._load_excel_file(file_path, append=False)
 
     def _save_remaining_list(self):
         """Saves the current remaining unprinted student IDs to a CSV or XLSX file."""
@@ -819,30 +882,39 @@ class AppGUI:
 
         self.root.after(0, _do_ui_pop)
 
-    def _load_excel_file(self, file_path: str):
-        self.lbl_file_path.config(text=os.path.basename(file_path))
+    def _load_excel_file(self, file_path: str, append: bool = False):
         records, err = ExcelHandler.load_photographed_students(file_path)
-        
-        for row in self.student_tree.get_children():
-            self.student_tree.delete(row)
 
         if err:
-            self.student_records = []
-            self.student_ids = []
-            self.lbl_found_count.config(text="0 PHOTOGRAPHED STUDENTS FOUND", foreground="red")
+            if not append:
+                self.student_records = []
+                self.student_ids = []
+                self._refresh_treeview_from_records()
+                self.lbl_found_count.config(text="0 PHOTOGRAPHED STUDENTS FOUND", foreground="red")
             self.logger.error(err)
             messagebox.showerror("Excel Error", err)
             return
 
-        self.student_records = records
-        self._refresh_treeview_from_records()
+        if append:
+            existing_ids = {r['id'] for r in self.student_records}
+            added_count = 0
+            for r in records:
+                if r['id'] not in existing_ids:
+                    self.student_records.append(r)
+                    existing_ids.add(r['id'])
+                    added_count += 1
+            self.lbl_file_path.config(text=f"Appended {os.path.basename(file_path)}")
+            self.logger.log(f"Appended list: {os.path.basename(file_path)} ({added_count} new students added, total {len(self.student_records)})")
+        else:
+            self.lbl_file_path.config(text=os.path.basename(file_path))
+            self.student_records = records
+            self.logger.log(f"Loaded Excel file: {file_path} ({len(records)} students loaded)")
 
+        self._refresh_treeview_from_records()
         count = len(self.student_ids)
         self.initial_total_count = count
         self._update_progress_from_records()
         self.lbl_found_count.config(text=f"{count} PHOTOGRAPHED STUDENTS FOUND", foreground="#0066cc")
-        self.logger.log(f"Loaded Excel file: {file_path}")
-        self.logger.log(f"Found {count} PHOTOGRAPHED students")
         
         self.config.last_excel_path = file_path
         self.config.save()
