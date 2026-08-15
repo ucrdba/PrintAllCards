@@ -1,6 +1,10 @@
 from typing import List, Tuple
+import warnings
 import pandas as pd
 import openpyxl
+
+# Suppress harmless openpyxl stylesheet warnings when reading Excel workbooks
+warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
 
 class ExcelHandler:
     _current_df: pd.DataFrame = None

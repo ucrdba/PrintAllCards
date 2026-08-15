@@ -438,9 +438,6 @@ class AppGUI:
         self.ent_pause_after.insert(0, str(pause_val))
         self._update_pause_countdown(pause_val)
 
-        if self.config.last_excel_path and os.path.exists(self.config.last_excel_path):
-            self._load_excel_file(self.config.last_excel_path)
-
         self._refresh_printer_list()
         self._start_queue_polling_loop()
 
