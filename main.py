@@ -3,12 +3,14 @@ import os
 import ctypes
 import tkinter as tk
 
+from version import APP_VERSION
+
 def set_dpi_awareness():
     """Sets high DPI awareness and process AppUserModelID on Windows for custom taskbar icons."""
     if sys.platform == 'win32':
         try:
             # Register explicit AppUserModelID so Windows Taskbar pins and displays the custom icon
-            myappid = 'Schoolhouse.StudentPhotoPrintAutomator.App.2.0'
+            myappid = f'Schoolhouse.StudentPhotoPrintAutomator.App.{APP_VERSION}'
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
         except Exception:
             pass
@@ -64,7 +66,7 @@ def show_splash_screen(root, duration_ms=5000):
         lbl_placeholder.pack(pady=(25, 10))
 
     # Titles & Taglines
-    lbl_title = tk.Label(frame, text="STUDENT PHOTO PRINT AUTOMATOR", font=("Arial", 14, "bold"), bg="#1e222d", fg="#ffffff")
+    lbl_title = tk.Label(frame, text=f"STUDENT PHOTO PRINT AUTOMATOR v{APP_VERSION}", font=("Arial", 14, "bold"), bg="#1e222d", fg="#ffffff")
     lbl_title.pack(pady=(0, 4))
 
     lbl_sub = tk.Label(frame, text="Card Printing & Queue Management System", font=("Arial", 9), bg="#1e222d", fg="#9aa0a6")

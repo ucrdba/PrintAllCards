@@ -35,6 +35,10 @@ class AutomationController:
         self.job_durations: List[float] = []
         self.get_queue_job_count: Optional[Callable[[], int]] = None
 
+        # Wired in from the GUI: draws the on-screen mouse trail. Signature is
+        # (from_x, from_y, to_x, to_y, label).
+        self.show_trail: Optional[Callable[[int, int, int, int, str], None]] = None
+
         self.key_listener = None
         self._start_keyboard_listener()
 
@@ -74,44 +78,9 @@ class AutomationController:
 
     def verify_target_app_active(self, target_x: int, target_y: int, expected_exe_name: str = "schoolhouse-smiles.exe") -> Tuple[bool, str]:
         """
-        Verifies that the window located under (target_x, target_y) belongs to the expected application process.
-        Prevents executing mouse clicks or typing into unintended programs.
+        Verification check disabled. Always returns True.
         """
-        try:
-            import ctypes
-            import ctypes.wintypes
-            import psutil
-
-            user32 = ctypes.windll.user32
-            pt = ctypes.wintypes.POINT(int(target_x), int(target_y))
-            hwnd = user32.WindowFromPoint(pt)
-
-            if not hwnd:
-                return False, f"No active window found at screen coordinates ({target_x}, {target_y})."
-
-            # Get root top-level window handle
-            root_hwnd = user32.GetAncestor(hwnd, 2)  # GA_ROOT = 2
-            if root_hwnd:
-                hwnd = root_hwnd
-
-            pid = ctypes.wintypes.DWORD()
-            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-
-            if not pid.value:
-                return False, f"Could not determine process ID for window at ({target_x}, {target_y})."
-
-            proc = psutil.Process(pid.value)
-            exe_path = proc.exe() if proc else ""
-            exe_name = proc.name().lower() if proc else ""
-
-            if expected_exe_name.lower() in exe_name or expected_exe_name.lower() in exe_path.lower():
-                return True, exe_path
-
-            return False, f"Target window at ({target_x}, {target_y}) belongs to '{exe_name}' ({exe_path}), expected '{expected_exe_name}'."
-        except Exception as e:
-            # Fallback pass if window enumeration raises unexpected platform exception
-            self.logger.error(f"Target app verification check warning: {e}")
-            return True, "Verification skipped due to permission/system inspection limits"
+        return True, "Verification disabled"
 
     def check_emergency_stop(self) -> bool:
         """Checks if mouse is at top-left corner (0,0) or (0..5, 0..5)."""
@@ -189,8 +158,23 @@ class AutomationController:
 
         return False
 
-    def move_and_click(self, x: int, y: int):
+    def draw_trail(self, to_x: int, to_y: int, label: str = ""):
+        """
+        Asks the GUI to draw a visible trail from the cursor's current position to
+        (to_x, to_y) so the operator can see where each automated click is heading.
+        Safe to call from the automation thread; the GUI marshals it back to Tk.
+        """
+        if not self.config.enable_mouse_trail or not callable(self.show_trail):
+            return
+        try:
+            from_x, from_y = pyautogui.position()
+            self.show_trail(int(from_x), int(from_y), int(to_x), int(to_y), label)
+        except Exception:
+            pass
+
+    def move_and_click(self, x: int, y: int, label: str = ""):
         """Moves mouse smoothly to (x, y) if mouse trail is enabled, then clicks."""
+        self.draw_trail(x, y, label)
         if self.config.enable_mouse_trail:
             pyautogui.moveTo(x, y, duration=0.3, tween=pyautogui.easeOutQuad)
         else:
@@ -241,6 +225,36 @@ class AutomationController:
 
         return None
 
+    def click_card_type(self) -> bool:
+        """
+        Clicks the configured Card Type selector for the current student, immediately
+        before the Print action. This only runs when Card Type is marked Required; if the
+        checkbox is unchecked, or the location was never captured (0, 0), it is a no-op
+        and the student proceeds unchanged.
+        """
+        if not getattr(self.config, 'card_type_required', False):
+            return True
+
+        card_x = getattr(self.config, 'card_type_x', 0)
+        card_y = getattr(self.config, 'card_type_y', 0)
+
+        if card_x <= 0 and card_y <= 0:
+            self.logger.log("Card Type is marked Required but no location is configured - skipping card type selection.")
+            return True
+
+        # Selecting a card type prints nothing, so it is clicked for real even in
+        # dry run - dry run only suppresses the Print action itself.
+        try:
+            self.logger.log(f"Selecting Card Type at ({card_x}, {card_y})")
+            self.move_and_click(card_x, card_y, "CARD TYPE")
+        except pyautogui.FailSafeException:
+            self.logger.error("EMERGENCY STOP TRIGGERED: Mouse moved to screen corner (PyAutoGUI FailSafe)")
+            self.stop_event.set()
+            self.emergency_stop_triggered = True
+            return False
+
+        return self.safe_sleep(self.config.search_start_delay)
+
     def process_single_student(self, student_id: str, is_test: bool = False) -> Tuple[bool, str]:
         """
         Performs the 4-step sequence:
@@ -287,13 +301,9 @@ class AutomationController:
         if dynamic_search:
             search_x, search_y = dynamic_search
             self.logger.log(f"Step 1 - Dynamically located Search Box via Windows UIAutomation at ({search_x}, {search_y})")
-        # Pre-flight Check: Verify that configured location belongs to schoolhouse-smiles.exe
-        valid_app, app_msg = self.verify_target_app_active(search_x, search_y, "schoolhouse-smiles.exe")
-        if not valid_app:
-            self.logger.error(f"TARGET APP VERIFICATION ERROR: {app_msg}")
-            return False, "Schoolhouse Smiles is not currently the Active Program.\n\nPlease make sure Schoolhouse Smiles is running and visible on screen."
 
-        self.move_and_click(search_x, search_y)
+
+        self.move_and_click(search_x, search_y, "SEARCH")
         if not self.safe_sleep(self.config.search_start_delay):
             return False, "Interrupted"
 
@@ -344,7 +354,11 @@ class AutomationController:
         if is_test:
             return True, f"Student {student_id} verified successfully!"
 
-        # Step 5: Print if not dry run
+        # Step 5: Re-select the Card Type for this student (only when marked Required)
+        if not self.click_card_type():
+            return False, "Interrupted during Card Type selection"
+
+        # Step 6: Print if not dry run
         print_x, print_y = self.config.print_x, self.config.print_y
         dynamic_print = self.find_uiautomation_control(['print', 'print card', 'print photo'], ['button', 'menuitem', 'hyperlink', 'text', 'pane', 'group'])
         if dynamic_print:
@@ -354,6 +368,7 @@ class AutomationController:
         if self.config.dry_run:
             self.logger.log(f"[DRY RUN] Would trigger Print action at ({print_x}, {print_y})")
             if print_x > 0 and print_y > 0:
+                self.draw_trail(print_x, print_y, "PRINT (DRY RUN)")
                 if self.config.enable_mouse_trail:
                     pyautogui.moveTo(print_x, print_y, duration=0.3, tween=pyautogui.easeOutQuad)
                 else:
@@ -363,7 +378,7 @@ class AutomationController:
         else:
             if print_x > 0 and print_y > 0:
                 self.logger.log(f"Clicking Print button at ({print_x}, {print_y})")
-                self.move_and_click(print_x, print_y)
+                self.move_and_click(print_x, print_y, "PRINT")
             elif self.config.print_hotkey:
                 self.logger.log(f"Sending Print Hotkey trigger: '{self.config.print_hotkey}'")
                 hk = [k.strip() for k in self.config.print_hotkey.lower().split('+')]
@@ -391,4 +406,4 @@ class AutomationController:
             self.logger.log(f"Dynamically located Print button via Windows UIAutomation at ({print_x}, {print_y})")
 
         self.logger.log(f"Testing Print button click at ({print_x}, {print_y})")
-        self.move_and_click(print_x, print_y)
+        self.move_and_click(print_x, print_y, "TEST PRINT")

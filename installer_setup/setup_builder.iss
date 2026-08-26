@@ -2,7 +2,9 @@
 ; Note: Install Inno Setup 6 (https://jrsoftware.org/isdl.php) and compile this script to generate an installer setup.exe!
 
 #define MyAppName "Student Photo Print Automator"
-#define MyAppVersion "2.0.0"
+; Keep in step with APP_VERSION in ..ersion.py - the Inno Setup preprocessor
+; cannot import Python, so this is the one place the version is duplicated.
+#define MyAppVersion "1.1"
 #define MyAppPublisher "UCRDBA"
 #define MyAppURL "https://github.com/ucrdba/PrintAllCards"
 #define MyAppExeName "StudentPhotoPrintAutomator.exe"
@@ -17,7 +19,7 @@ AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DisableProgramGroupPage=yes
-OutputBaseFilename=StudentPhotoPrintAutomator_Setup_v2.0
+OutputBaseFilename=StudentPhotoPrintAutomator_Setup_v{#MyAppVersion}
 SetupIconFile=..\app_icon.ico
 Compression=lzma2/ultra64
 SolidCompression=yes

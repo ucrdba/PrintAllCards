@@ -1,5 +1,6 @@
 import sys
 import os
+import ctypes
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import threading
@@ -18,6 +19,7 @@ from config import AppConfig
 from logger import AppLogger
 from excel_handler import ExcelHandler
 from automation import AutomationController
+from version import APP_VERSION
 
 
 class ToolTip:
@@ -128,7 +130,7 @@ class ThermometerGauge(tk.Canvas):
 class AppGUI:
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("Student Photo Print Automator")
+        self.root.title(f"Student Photo Print Automator v{APP_VERSION}")
         self.root.geometry("850x700")
         self.root.minsize(700, 500)
 
@@ -155,6 +157,12 @@ class AppGUI:
         self.logger = AppLogger(gui_callback=self.append_log)
         self.automation = AutomationController(self.config, self.logger)
         self.automation.get_queue_job_count = self._get_current_queue_job_count
+        self.automation.show_trail = self._show_mouse_trail
+
+        # Lazily-created click-through overlay used to draw the mouse trail
+        self._trail_overlay = None
+        self._trail_canvas = None
+        self._trail_origin = (0, 0)
 
         self.student_ids: List[str] = []
         self.processed_history: List[dict] = []
@@ -204,7 +212,7 @@ class AppGUI:
         title_box = ttk.Frame(main_frame)
         title_box.pack(fill=tk.X, pady=(0, 10))
 
-        title_label = ttk.Label(title_box, text="STUDENT PHOTO PRINT AUTOMATOR", font=("Arial", 14, "bold"))
+        title_label = ttk.Label(title_box, text=f"STUDENT PHOTO PRINT AUTOMATOR v{APP_VERSION}", font=("Arial", 14, "bold"))
         title_label.pack(side=tk.LEFT)
 
         btn_app_help = ttk.Button(title_box, text="❓ Help & Guide", command=self._show_help_guide)
@@ -339,12 +347,15 @@ class AppGUI:
         self.student_tree.bind("<BackSpace>", lambda e: self._remove_selected_student())
         # Bind double-click to copy Student ID to clipboard (paste buffer)
         self.student_tree.bind("<Double-1>", self._on_student_double_click)
+        # Bind Ctrl+C to copy all selected Student ID(s), one per line
+        self.student_tree.bind("<Control-c>", self._copy_selected_students)
+        self.student_tree.bind("<Control-C>", self._copy_selected_students)
         # Bind right-click to show context menu
         self.student_tree.bind("<Button-3>", self._show_tree_context_menu)
 
         # Right-click context menu
         self.tree_context_menu = tk.Menu(self.root, tearoff=0)
-        self.tree_context_menu.add_command(label="📋 Copy Student ID", command=lambda: self._on_student_double_click(None))
+        self.tree_context_menu.add_command(label="📋 Copy Student ID(s)", command=self._copy_selected_students)
         self.tree_context_menu.add_command(label="🗑️ Remove Selected", command=self._remove_selected_student)
         self.tree_context_menu.add_command(label="✂️ Delete Prior", command=self._remove_prior_students)
         self.tree_context_menu.add_command(label="↩️ Restore Previous N Students", command=self._restore_previous_students)
@@ -385,6 +396,30 @@ class AppGUI:
         btn_pick_print = ttk.Button(p_row, text="Select Location", command=lambda: self._capture_location("Print"))
         btn_pick_print.pack(side=tk.RIGHT)
         ToolTip(btn_pick_print, "Captures mouse cursor coordinates over the Print Card action button (3 sec delay).")
+
+        # Card Type Location
+        c_row = ttk.Frame(loc_frame)
+        c_row.pack(fill=tk.X, pady=3)
+        ttk.Label(c_row, text="Card Type:", width=15).pack(side=tk.LEFT)
+        ttk.Label(c_row, text="X:").pack(side=tk.LEFT)
+        self.ent_card_type_x = ttk.Entry(c_row, width=6)
+        self.ent_card_type_x.pack(side=tk.LEFT, padx=2)
+        ttk.Label(c_row, text="Y:").pack(side=tk.LEFT)
+        self.ent_card_type_y = ttk.Entry(c_row, width=6)
+        self.ent_card_type_y.pack(side=tk.LEFT, padx=2)
+        btn_pick_card_type = ttk.Button(c_row, text="Select Location", command=lambda: self._capture_location("Card Type"))
+        btn_pick_card_type.pack(side=tk.RIGHT)
+        ToolTip(btn_pick_card_type, "Optional. Captures mouse cursor coordinates over the Card Type selector (3 sec delay). Only used when 'Required' is checked.")
+
+        # 'Required' sits on its own line under the Card Type coordinates: the row above
+        # is already at the full width of the right pane, so the label would be clipped.
+        cr_row = ttk.Frame(loc_frame)
+        cr_row.pack(fill=tk.X)
+        ttk.Label(cr_row, text="", width=15).pack(side=tk.LEFT)
+        self.var_card_type_required = tk.BooleanVar(value=getattr(self.config, 'card_type_required', False))
+        chk_card_type_required = ttk.Checkbutton(cr_row, text="Required (click for every student)", variable=self.var_card_type_required)
+        chk_card_type_required.pack(side=tk.LEFT)
+        ToolTip(chk_card_type_required, "When checked, the Card Type location is clicked for every student, immediately before Print. When unchecked, Card Type is never clicked.")
 
         # --- SECTION 3: TIMING & CONFIG ---
         timing_frame = ttk.LabelFrame(right_pane, text="TIMING & OPTIONS", padding="8")
@@ -438,6 +473,7 @@ class AppGUI:
         # Checkboxes
         self.var_mouse_trail = tk.BooleanVar(value=self.config.enable_mouse_trail)
         chk_trail = ttk.Checkbutton(timing_frame, text="Enable Visible Mouse Movement Trail", variable=self.var_mouse_trail)
+        ToolTip(chk_trail, "Draws an on-screen arrow and target ring for every automated click, and moves the cursor slowly instead of jumping, so you can see exactly where each click lands. Useful for troubleshooting wrong coordinates.")
         chk_trail.pack(anchor=tk.W, pady=(5, 0))
         ToolTip(chk_trail, "Smoothly animates mouse cursor movements so you can see where clicks take place.")
 
@@ -622,6 +658,8 @@ class AppGUI:
         self.ent_search_y.insert(0, str(self.config.search_y))
         self.ent_print_x.insert(0, str(self.config.print_x))
         self.ent_print_y.insert(0, str(self.config.print_y))
+        self.ent_card_type_x.insert(0, str(getattr(self.config, 'card_type_x', 0)))
+        self.ent_card_type_y.insert(0, str(getattr(self.config, 'card_type_y', 0)))
 
         self.ent_delay_start.insert(0, str(self.config.search_start_delay))
         self.ent_delay_wait.insert(0, str(self.config.max_search_wait))
@@ -691,6 +729,7 @@ class AppGUI:
         self.var_mouse_trail.set(default_cfg.enable_mouse_trail)
         self.var_require_verification.set(default_cfg.require_verification)
         self.var_dry_run.set(default_cfg.dry_run)
+        self.var_card_type_required.set(default_cfg.card_type_required)
 
         self.logger.log("Loaded default timing and option values into GUI.")
 
@@ -700,6 +739,9 @@ class AppGUI:
         self.ent_search_y.delete(0, tk.END)
         self.ent_print_x.delete(0, tk.END)
         self.ent_print_y.delete(0, tk.END)
+        self.ent_card_type_x.delete(0, tk.END)
+        self.ent_card_type_y.delete(0, tk.END)
+        self.var_card_type_required.set(False)
 
         self.ent_delay_start.delete(0, tk.END)
         self.ent_delay_wait.delete(0, tk.END)
@@ -717,6 +759,8 @@ class AppGUI:
             sy = self.ent_search_y.get().strip()
             px = self.ent_print_x.get().strip()
             py = self.ent_print_y.get().strip()
+            cx = self.ent_card_type_x.get().strip()
+            cy = self.ent_card_type_y.get().strip()
 
             d_start = self.ent_delay_start.get().strip()
             d_wait = self.ent_delay_wait.get().strip()
@@ -729,6 +773,8 @@ class AppGUI:
             self.config.search_y = int(sy) if sy else 0
             self.config.print_x = int(px) if px else 0
             self.config.print_y = int(py) if py else 0
+            self.config.card_type_x = int(cx) if cx else 0
+            self.config.card_type_y = int(cy) if cy else 0
 
             self.config.search_start_delay = float(d_start) if d_start else 0.5
             self.config.max_search_wait = float(d_wait) if d_wait else 15.0
@@ -739,6 +785,7 @@ class AppGUI:
             self.config.require_verification = self.var_require_verification.get()
             self.config.enable_mouse_trail = self.var_mouse_trail.get()
             self.config.dry_run = self.var_dry_run.get()
+            self.config.card_type_required = self.var_card_type_required.get()
 
             if hasattr(self, 'var_queue_sync'):
                 self.config.enable_queue_sync = self.var_queue_sync.get()
@@ -1041,6 +1088,22 @@ class AppGUI:
             self.logger.log(f"Copied Student ID '{item_id}' to clipboard.")
             self.lbl_status.config(text=f"Status: Copied Student ID '{item_id}' to clipboard")
 
+    def _copy_selected_students(self, event=None):
+        """Copies all selected Treeview rows (ID, First Name, Last Name, Grade) to the
+        clipboard as tab-separated lines, one per selected row, so pasting into a
+        spreadsheet reproduces the full highlighted line(s)."""
+        selected = self.student_tree.selection()
+        if not selected:
+            return
+        lines = ["\t".join(str(v) for v in self.student_tree.item(iid, 'values')) for iid in selected]
+        pyperclip.copy("\n".join(lines))
+        if len(selected) == 1:
+            self.logger.log(f"Copied line for Student ID '{selected[0]}' to clipboard.")
+            self.lbl_status.config(text=f"Status: Copied line for Student ID '{selected[0]}' to clipboard")
+        else:
+            self.logger.log(f"Copied {len(selected)} student lines to clipboard.")
+            self.lbl_status.config(text=f"Status: Copied {len(selected)} student lines to clipboard")
+
     def _remove_prior_students(self):
         """Removes all students preceding (or up to) the currently selected student in the list."""
         selected = self.student_tree.selection()
@@ -1307,15 +1370,16 @@ class AppGUI:
 
         x, y = pyautogui.position()
         if target_name == "Search":
-            self.ent_search_x.delete(0, tk.END)
-            self.ent_search_x.insert(0, str(x))
-            self.ent_search_y.delete(0, tk.END)
-            self.ent_search_y.insert(0, str(y))
+            ent_x, ent_y = self.ent_search_x, self.ent_search_y
+        elif target_name == "Card Type":
+            ent_x, ent_y = self.ent_card_type_x, self.ent_card_type_y
         else:
-            self.ent_print_x.delete(0, tk.END)
-            self.ent_print_x.insert(0, str(x))
-            self.ent_print_y.delete(0, tk.END)
-            self.ent_print_y.insert(0, str(y))
+            ent_x, ent_y = self.ent_print_x, self.ent_print_y
+
+        ent_x.delete(0, tk.END)
+        ent_x.insert(0, str(x))
+        ent_y.delete(0, tk.END)
+        ent_y.insert(0, str(y))
 
         self.lbl_status.config(text=f"Status: Captured {target_name} at ({x}, {y})")
         self.logger.log(f"Captured {target_name} Location: X={x}, Y={y}")
@@ -1673,7 +1737,8 @@ class AppGUI:
             ]),
             ("2. AUTOMATION LOCATIONS (SELECT LOCATION)", [
                 ("Student Search", "Position mouse over the StudentSearch input box. Click 'Select Location' and wait 3s."),
-                ("Print Button", "Position mouse over the target Print Button. Click 'Select Location' and wait 3s.")
+                ("Print Button", "Position mouse over the target Print Button. Click 'Select Location' and wait 3s."),
+                ("Card Type", "Optional. Position mouse over the Card Type selector and click 'Select Location'. Tick 'Required' to have that location clicked for every student, right before Print; leave it unticked to never click it.")
             ]),
             ("3. TIMING & CONFIGURATION OPTIONS", [
                 ("Search Start Delay (s)", "Delay (in seconds) after clicking the search box before pasting Student ID."),
@@ -1789,6 +1854,98 @@ class AppGUI:
                 pass
 
         self.config.save()
+
+    # --- Visible mouse movement trail ---------------------------------------
+    # A transparent, always-on-top, click-through window spanning the whole virtual
+    # desktop. Click-through is essential: automation drives raw screen coordinates,
+    # so an overlay that swallowed clicks would break every run.
+
+    TRAIL_BG = "#0a0b0c"      # treated as transparent by Windows
+    TRAIL_HOLD_MS = 2500      # how long each drawn segment stays on screen
+
+    def _ensure_trail_overlay(self):
+        """Creates the trail overlay on first use and returns its canvas."""
+        if self._trail_canvas is not None:
+            return self._trail_canvas
+
+        user32 = ctypes.windll.user32
+        vx, vy = user32.GetSystemMetrics(76), user32.GetSystemMetrics(77)
+        vw, vh = user32.GetSystemMetrics(78), user32.GetSystemMetrics(79)
+        self._trail_origin = (vx, vy)
+
+        overlay = tk.Toplevel(self.root)
+        overlay.title("Trail Overlay")   # deliberately keyword-free: find_uiautomation_control
+                                         # scans window names for 'print' / 'search'
+        overlay.overrideredirect(True)
+        overlay.attributes("-topmost", True)
+        overlay.geometry(f"{vw}x{vh}+{vx}+{vy}")
+        try:
+            overlay.attributes("-transparentcolor", self.TRAIL_BG)
+        except tk.TclError:
+            overlay.attributes("-alpha", 0.45)
+
+        canvas = tk.Canvas(overlay, bg=self.TRAIL_BG, highlightthickness=0, borderwidth=0)
+        canvas.pack(fill=tk.BOTH, expand=True)
+        overlay.update_idletasks()
+
+        # WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW
+        try:
+            hwnd = user32.GetParent(overlay.winfo_id()) or overlay.winfo_id()
+            ex_style = user32.GetWindowLongW(hwnd, -20)
+            user32.SetWindowLongW(hwnd, -20, ex_style | 0x00080000 | 0x00000020 | 0x08000000 | 0x00000080)
+        except Exception as e:
+            self.logger.log(f"Mouse trail overlay could not be made click-through: {e}")
+
+        overlay.withdraw()
+        self._trail_overlay = overlay
+        self._trail_canvas = canvas
+        return canvas
+
+    def _show_mouse_trail(self, x1: int, y1: int, x2: int, y2: int, label: str = ""):
+        """Called from the automation thread; hands the draw back to the Tk thread."""
+        self.root.after(0, lambda: self._draw_trail_segment(x1, y1, x2, y2, label))
+
+    def _draw_trail_segment(self, x1: int, y1: int, x2: int, y2: int, label: str = ""):
+        if not self.var_mouse_trail.get():
+            return
+        try:
+            canvas = self._ensure_trail_overlay()
+            ox, oy = self._trail_origin
+            ax, ay, bx, by = x1 - ox, y1 - oy, x2 - ox, y2 - oy
+
+            items = [
+                canvas.create_line(ax, ay, bx, by, fill="#00e5ff", width=3,
+                                   arrow=tk.LAST, arrowshape=(18, 22, 7)),
+                canvas.create_oval(ax - 6, ay - 6, ax + 6, ay + 6, outline="#00e5ff", width=2),
+                canvas.create_oval(bx - 16, by - 16, bx + 16, by + 16, outline="#ff3b30", width=3),
+                canvas.create_line(bx - 24, by, bx + 24, by, fill="#ff3b30", width=1),
+                canvas.create_line(bx, by - 24, bx, by + 24, fill="#ff3b30", width=1),
+            ]
+            if label:
+                items.append(canvas.create_text(bx + 24, by - 26, text=f"{label}  ({x2}, {y2})",
+                                                anchor=tk.W, fill="#ffd400",
+                                                font=("Arial", 11, "bold")))
+
+            self._trail_overlay.deiconify()
+            self._trail_overlay.lift()
+            self.root.after(self.TRAIL_HOLD_MS, lambda: self._erase_trail_items(items))
+        except Exception as e:
+            self.logger.log(f"Mouse trail could not be drawn: {e}")
+
+    def _erase_trail_items(self, items):
+        canvas = self._trail_canvas
+        if canvas is None:
+            return
+        for item in items:
+            try:
+                canvas.delete(item)
+            except Exception:
+                pass
+        try:
+            if not canvas.find_all() and self._trail_overlay is not None:
+                self._trail_overlay.withdraw()
+        except Exception:
+            pass
 
     def _get_current_queue_job_count(self) -> int:
         """Returns active printer queue job count synchronously for AutomationController gating."""

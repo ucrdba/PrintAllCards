@@ -9,6 +9,9 @@ class AppConfig:
     search_y: int = 0
     print_x: int = 0
     print_y: int = 0
+    card_type_x: int = 0
+    card_type_y: int = 0
+    card_type_required: bool = False
     search_start_delay: float = 0.5
     max_search_wait: float = 15.0
     print_delay: float = 4.0
@@ -20,6 +23,8 @@ class AppConfig:
     pause_after_cards: int = 0
     last_excel_path: str = ""
     selected_printer: str = "NullPrinter"
+    enable_queue_sync: bool = False
+    max_queue_jobs: int = 5
 
     @classmethod
     def get_config_path(cls) -> Path:
