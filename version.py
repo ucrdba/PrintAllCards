@@ -9,4 +9,4 @@ Note that installer_setup/setup_builder.iss keeps its own MyAppVersion, because
 the Inno Setup preprocessor cannot import Python. When releasing, change both.
 """
 
-APP_VERSION = "1.1"
+APP_VERSION = "1.2"

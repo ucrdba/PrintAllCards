@@ -34,21 +34,48 @@ class ToolTip:
     def show_tip(self, event=None):
         if self.tip_window or not self.text:
             return
-        x = self.widget.winfo_rootx() + 20
-        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
 
         self.tip_window = tw = tk.Toplevel(self.widget)
         tw.wm_overrideredirect(True)
-        tw.wm_geometry(f"+{x}+{y}")
+        tw.withdraw() # Stay hidden until wrapped, measured and clamped on screen
         tw.attributes("-topmost", True)
 
+        # Wrap long tooltip text instead of letting it run off the edge of the
+        # screen. wraplength is in pixels while the font is in points, so it is
+        # scaled by the display DPI to keep the same number of characters a line.
+        dpi_factor = self.widget.tk.call('tk', 'scaling') / (96.0 / 72.0)
+        wrap_px = int(360 * dpi_factor)
+
         label = tk.Label(
-            tw, text=self.text, justify=tk.LEFT,
+            tw, text=self.text, justify=tk.LEFT, wraplength=wrap_px,
             background="#ffffe1", foreground="#333333",
             relief=tk.SOLID, borderwidth=1,
             font=("Arial", 9, "normal"), padx=6, pady=4
         )
         label.pack(ipadx=1)
+
+        # Keep the whole tooltip on screen: prefer below-right of the widget, but
+        # pull it back inside the screen edges when it would overflow.
+        tw.update_idletasks()
+        tip_w = tw.winfo_reqwidth()
+        tip_h = tw.winfo_reqheight()
+        screen_w = self.widget.winfo_screenwidth()
+        screen_h = self.widget.winfo_screenheight()
+
+        x = self.widget.winfo_rootx() + 20
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
+
+        if x + tip_w > screen_w:
+            x = screen_w - tip_w - 10
+        if y + tip_h > screen_h:
+            # No room below the widget - flip the tooltip above it
+            y = self.widget.winfo_rooty() - tip_h - 5
+
+        x = max(0, x)
+        y = max(0, y)
+
+        tw.wm_geometry(f"+{x}+{y}")
+        tw.deiconify()
 
     def hide_tip(self, event=None):
         if self.tip_window:

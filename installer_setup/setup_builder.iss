@@ -4,7 +4,7 @@
 #define MyAppName "Student Photo Print Automator"
 ; Keep in step with APP_VERSION in ..ersion.py - the Inno Setup preprocessor
 ; cannot import Python, so this is the one place the version is duplicated.
-#define MyAppVersion "1.1"
+#define MyAppVersion "1.2"
 #define MyAppPublisher "UCRDBA"
 #define MyAppURL "https://github.com/ucrdba/PrintAllCards"
 #define MyAppExeName "StudentPhotoPrintAutomator.exe"
