@@ -18,6 +18,10 @@ AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
+; The bundled EXE is a 64-bit PyInstaller build. Without this, Setup runs in
+; 32-bit mode and {autopf} resolves to "Program Files (x86)", putting a 64-bit
+; application in the 32-bit directory.
+ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
 OutputBaseFilename=StudentPhotoPrintAutomator_Setup_v{#MyAppVersion}
 SetupIconFile=..\app_icon.ico
