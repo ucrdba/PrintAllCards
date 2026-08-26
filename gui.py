@@ -1874,8 +1874,8 @@ class AppGUI:
         self._trail_origin = (vx, vy)
 
         overlay = tk.Toplevel(self.root)
-        overlay.title("Trail Overlay")   # deliberately keyword-free: find_uiautomation_control
-                                         # scans window names for 'print' / 'search'
+        overlay.title("Trail Overlay")   # deliberately keyword-free so it can never be
+                                         # mistaken for the target app's Print button
         overlay.overrideredirect(True)
         overlay.attributes("-topmost", True)
         overlay.geometry(f"{vw}x{vh}+{vx}+{vy}")

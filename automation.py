@@ -183,47 +183,96 @@ class AutomationController:
         # Perform click with standard duration to register on Windows controls
         pyautogui.click(x, y, duration=0.05)
 
-    def find_uiautomation_control(self, name_keywords: list, control_types: list = None) -> Optional[Tuple[int, int]]:
+    TARGET_EXE = "schoolhouse-smiles.exe"
+
+    def _window_process_name(self, hwnd: int) -> str:
+        """Returns the lower-cased exe name owning hwnd, or '' if it cannot be determined."""
+        try:
+            import ctypes
+            import ctypes.wintypes
+            pid = ctypes.wintypes.DWORD()
+            ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if not pid.value:
+                return ""
+            # PROCESS_QUERY_LIMITED_INFORMATION - works without elevation
+            handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid.value)
+            if not handle:
+                return ""
+            try:
+                buf = ctypes.create_unicode_buffer(1024)
+                size = ctypes.wintypes.DWORD(1024)
+                if not ctypes.windll.kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
+                    return ""
+                return buf.value.rsplit("\\", 1)[-1].lower()
+            finally:
+                ctypes.windll.kernel32.CloseHandle(handle)
+        except Exception:
+            return ""
+
+    def find_print_button(self) -> Optional[Tuple[int, int]]:
         """
-        Dynamically searches open Windows controls using UIAutomation to locate
-        a button or edit box matching name_keywords (e.g. 'Print', 'Search', 'StudentSearch').
-        Returns (x, y) center coordinates if found.
+        Locates the target app's Print button through Windows UIAutomation and returns
+        its centre, or None if it cannot be found.
+
+        This exists because the button moves vertically: a student who has been printed
+        before gets an extra "(Last Printed ...)" line above the buttons, pushing Print
+        a couple of hundred pixels down the Y axis, so a fixed coordinate misses it.
+
+        Only the Print button is located this way. The search box keeps its configured
+        coordinates, since it sits at the top of the window where nothing shifts it.
         """
         if not HAS_UIAUTOMATION:
             return None
 
         try:
-            # Walk top-level window controls
             root = auto.GetRootControl()
-            for window in root.GetChildren():
-                if not window.IsOffscreen:
-                    try:
-                        descendants = window.GetDescendants() if hasattr(window, 'GetDescendants') else []
-                    except Exception:
+
+            window = None
+            for child in root.GetChildren():
+                try:
+                    if child.IsOffscreen:
                         continue
+                    # Confirm by process, not by title: clicking a Print button that
+                    # belongs to some other application would be worse than not finding one.
+                    if self._window_process_name(child.NativeWindowHandle) == self.TARGET_EXE:
+                        window = child
+                        break
+                except Exception:
+                    continue
 
-                    for child in descendants:
-                        try:
-                            c_name = str(child.Name).lower().strip()
-                            c_type = str(child.ControlTypeName).lower().strip()
+            if window is None:
+                return None
 
-                            # Check control type filter if specified
-                            if control_types and not any(ct in c_type for ct in control_types):
-                                continue
+            # 'Print with Dialog' also starts with "print" and opens a dialog instead of
+            # printing, so an exact name match always wins over a prefix match.
+            exact = None
+            prefix = None
+            for ctrl, _depth in auto.WalkControl(window, includeTop=False, maxDepth=40):
+                try:
+                    if ctrl.ControlTypeName != "ButtonControl":
+                        continue
+                    name = str(ctrl.Name).strip().lower()
+                except Exception:
+                    continue
 
-                            # Check if name contains any of the keywords
-                            if any(kw in c_name for kw in name_keywords):
-                                rect = child.BoundingRectangle
-                                if rect and rect.width() > 0 and rect.height() > 0:
-                                    cx = rect.left + rect.width() // 2
-                                    cy = rect.top + rect.height() // 2
-                                    return (cx, cy)
-                        except Exception:
-                            continue
+                if name == "print":
+                    exact = ctrl
+                    break
+                if prefix is None and name.startswith("print") and "dialog" not in name:
+                    prefix = ctrl
+
+            found = exact or prefix
+            if found is None:
+                return None
+
+            rect = found.BoundingRectangle
+            if not rect or rect.width() <= 0 or rect.height() <= 0:
+                return None
+
+            return (rect.left + rect.width() // 2, rect.top + rect.height() // 2)
         except Exception as e:
-            pass
-
-        return None
+            self.logger.log(f"UIAutomation Print lookup failed ({e}) - falling back to configured coordinates.")
+            return None
 
     def click_card_type(self) -> bool:
         """
@@ -296,12 +345,6 @@ class AutomationController:
         # Step 1: Click Search location
         search_x, search_y = self.config.search_x, self.config.search_y
 
-        # Try dynamic UIAutomation lookup for search box first
-        dynamic_search = self.find_uiautomation_control(['studentsearch', 'search', 'student id'], ['edit', 'textbox', 'input'])
-        if dynamic_search:
-            search_x, search_y = dynamic_search
-            self.logger.log(f"Step 1 - Dynamically located Search Box via Windows UIAutomation at ({search_x}, {search_y})")
-
 
         self.move_and_click(search_x, search_y, "SEARCH")
         if not self.safe_sleep(self.config.search_start_delay):
@@ -360,10 +403,11 @@ class AutomationController:
 
         # Step 6: Print if not dry run
         print_x, print_y = self.config.print_x, self.config.print_y
-        dynamic_print = self.find_uiautomation_control(['print', 'print card', 'print photo'], ['button', 'menuitem', 'hyperlink', 'text', 'pane', 'group'])
+        dynamic_print = self.find_print_button()
         if dynamic_print:
+            drift = abs(dynamic_print[1] - print_y)
             print_x, print_y = dynamic_print
-            self.logger.log(f"Dynamically located Electron Print element at ({print_x}, {print_y})")
+            self.logger.log(f"Located Print button via UIAutomation at ({print_x}, {print_y}) - {drift}px from the configured Y")
 
         if self.config.dry_run:
             self.logger.log(f"[DRY RUN] Would trigger Print action at ({print_x}, {print_y})")
@@ -400,10 +444,10 @@ class AutomationController:
     def test_print_click(self):
         """Moves mouse and clicks print button once for test print."""
         print_x, print_y = self.config.print_x, self.config.print_y
-        dynamic_print = self.find_uiautomation_control(['print'], ['button'])
+        dynamic_print = self.find_print_button()
         if dynamic_print:
             print_x, print_y = dynamic_print
-            self.logger.log(f"Dynamically located Print button via Windows UIAutomation at ({print_x}, {print_y})")
+            self.logger.log(f"Located Print button via UIAutomation at ({print_x}, {print_y})")
 
         self.logger.log(f"Testing Print button click at ({print_x}, {print_y})")
         self.move_and_click(print_x, print_y, "TEST PRINT")

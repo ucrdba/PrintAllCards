@@ -3,6 +3,9 @@ dist/
 build/
 *.spec.bak
 
+# Inno Setup installer output (built artifacts, not source)
+installer_setup/Output/
+
 # Python byte-compiled / environment
 __pycache__/
 *.py[cod]
