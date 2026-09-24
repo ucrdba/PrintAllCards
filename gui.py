@@ -1779,7 +1779,7 @@ class AppGUI:
             ("1. IMPORT MODES & FILE HANDLING", [
                 ("Single Mode", "Selects a single file (.xlsx / .csv / .zip sync archive) to load a new student list."),
                 ("Multiple Mode", "Allows selecting multiple files to merge/append into your active student list."),
-                ("Export Template", "Saves a blank .xlsx/.csv with the expected column names (studentId, firstName, lastName, grade, status) so you can match other spreadsheets to it."),
+                ("Export Template", "Saves a blank .xlsx/.csv with the expected column names (studentId, firstName, lastName, grade, status) and a notes row explaining each one (skipped on import), so you can match other spreadsheets to it."),
                 ("Save Remaining List", "Exports unprinted students to a CSV/XLSX file if you stop early."),
                 ("Restore Previous N", "Opens an interactive checkbox dialog to restore deleted or printed cards back to top of queue."),
                 ("Right-Click Menu", "Right-click anywhere inside the list to Copy ID, Remove Selected, Delete Prior, or Clear All.")

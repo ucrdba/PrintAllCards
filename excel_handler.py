@@ -2,7 +2,7 @@ from typing import List, Tuple
 import warnings
 import pandas as pd
 import openpyxl
-from openpyxl.styles import Font
+from openpyxl.styles import Alignment, Font
 
 # Suppress harmless openpyxl stylesheet warnings when reading Excel workbooks
 warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
@@ -25,9 +25,17 @@ class ExcelHandler:
             if is_csv:
                 df_headers = pd.read_csv(file_path, nrows=1)
             else:
+                # Use the first sheet with a studentId-style header, so a workbook whose
+                # first sheet holds scratch data (e.g. a pasted raw roster) still imports
                 excel_file = pd.ExcelFile(file_path)
                 sheet_name = excel_file.sheet_names[0]
-                df_headers = pd.read_excel(file_path, sheet_name=sheet_name, nrows=1)
+                df_headers = pd.read_excel(excel_file, sheet_name=sheet_name, nrows=1)
+                for candidate in excel_file.sheet_names:
+                    candidate_headers = pd.read_excel(excel_file, sheet_name=candidate, nrows=1)
+                    if any(str(c).strip().lower().replace(' ', '').replace('_', '') in ['studentid', 'student', 'id']
+                           for c in candidate_headers.columns):
+                        sheet_name, df_headers = candidate, candidate_headers
+                        break
             
             student_id_col = None
             first_name_col = None
@@ -77,6 +85,9 @@ class ExcelHandler:
 
                 if pd.isna(raw_id) or (status_col and pd.isna(raw_status)):
                     continue
+                # Skip the explanatory notes row written by export_template
+                if str(raw_id).strip() == cls.TEMPLATE_NOTES[0]:
+                    continue
 
                 status_str = str(raw_status).strip().upper() if status_col else "PHOTOGRAPHED"
                 if status_str == "PHOTOGRAPHED":
@@ -123,18 +134,27 @@ class ExcelHandler:
 
     # Canonical column headers recognised by load_photographed_students
     TEMPLATE_COLUMNS = ['studentId', 'firstName', 'lastName', 'grade', 'status']
+    # Second-row notes in the template, one per column; the importer skips this row
+    TEMPLATE_NOTES = [
+        'NOTE: Required. Student ID exactly as searched in the card app (keep leading zeros)',
+        'Optional. Student first name',
+        'Optional. Student last name',
+        'Optional. Grade level',
+        'Only rows set to PHOTOGRAPHED are imported (delete column to import all)',
+    ]
 
     @classmethod
     def export_template(cls, export_path: str) -> Tuple[bool, str]:
         """
-        Writes an empty roster template with the canonical column headers.
-        For .xlsx, the studentId column is formatted as Text (so leading zeros survive
-        when pasting IDs) and a second 'Instructions' sheet explains each column;
-        only the first sheet is ever read on import.
+        Writes an empty roster template with the canonical column headers and a
+        second row of notes explaining each column (skipped on import). For .xlsx,
+        the studentId column is formatted as Text (so leading zeros survive when
+        pasting IDs) and a second 'Instructions' sheet explains each column; that
+        sheet has no studentId header, so the importer never picks it.
         """
         try:
             if export_path.lower().endswith('.csv'):
-                pd.DataFrame(columns=cls.TEMPLATE_COLUMNS).to_csv(export_path, index=False)
+                pd.DataFrame([cls.TEMPLATE_NOTES], columns=cls.TEMPLATE_COLUMNS).to_csv(export_path, index=False)
                 return True, f"Saved roster template to {export_path}"
 
             wb = openpyxl.Workbook()
@@ -143,11 +163,15 @@ class ExcelHandler:
             ws.append(cls.TEMPLATE_COLUMNS)
             for cell in ws[1]:
                 cell.font = Font(bold=True)
-            ws.freeze_panes = "A2"
-            for col_letter, width in zip("ABCDE", (16, 18, 18, 8, 16)):
+            ws.append(cls.TEMPLATE_NOTES)
+            for cell in ws[2]:
+                cell.font = Font(italic=True, color="808080")
+                cell.alignment = Alignment(wrap_text=True, vertical="top")
+            ws.freeze_panes = "A3"
+            for col_letter, width in zip("ABCDE", (30, 20, 20, 14, 30)):
                 ws.column_dimensions[col_letter].width = width
             # Text format for the studentId column so Excel keeps leading zeros
-            for row in range(2, 1002):
+            for row in range(3, 1003):
                 ws.cell(row=row, column=1).number_format = '@'
 
             info = wb.create_sheet("Instructions")
@@ -160,7 +184,8 @@ class ExcelHandler:
             info.append(["grade", "No", "Grade level (shown in the list only)."])
             info.append(["status", "No", "Only rows with PHOTOGRAPHED are imported. If the column is omitted, every row is imported."])
             info.append([])
-            info.append(["Only the first sheet (Students) is read on import. Column names are matched case-insensitively."])
+            info.append(["On import, the first sheet with a studentId column is used (the Students sheet here). Column names are matched case-insensitively."])
+            info.append(["The grey notes row (row 2) is skipped on import, so it can be left in place or deleted."])
             info.column_dimensions['A'].width = 14
             info.column_dimensions['B'].width = 10
             info.column_dimensions['C'].width = 100
