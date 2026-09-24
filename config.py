@@ -25,6 +25,12 @@ class AppConfig:
     selected_printer: str = "NullPrinter"
     enable_queue_sync: bool = False
     max_queue_jobs: int = 5
+    # DOM control: drive Schoolhouse Smiles through its DevTools port instead of
+    # screen coordinates (requires it to run with --remote-debugging-port)
+    use_dom_control: bool = True
+    dom_debug_port: int = 9222
+    card_type_name: str = ""
+    target_exe_path: str = r"C:\Program Files\schoolhouse-smiles\schoolhouse-smiles.exe"
 
     @classmethod
     def get_config_path(cls) -> Path:

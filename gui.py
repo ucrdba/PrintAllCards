@@ -3,6 +3,7 @@ import os
 import ctypes
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
+import subprocess
 import threading
 import time
 from typing import List
@@ -386,7 +387,8 @@ class AppGUI:
 
         # Right-click context menu
         self.tree_context_menu = tk.Menu(self.root, tearoff=0)
-        self.tree_context_menu.add_command(label="📋 Copy Student ID(s)", command=self._copy_selected_students)
+        self.tree_context_menu.add_command(label="📋 Copy Student ID(s)", command=self._copy_selected_student_ids)
+        self.tree_context_menu.add_command(label="📄 Copy Full Row(s)", command=self._copy_selected_students)
         self.tree_context_menu.add_command(label="🗑️ Remove Selected", command=self._remove_selected_student)
         self.tree_context_menu.add_command(label="✂️ Delete Prior", command=self._remove_prior_students)
         self.tree_context_menu.add_command(label="↩️ Restore Previous N Students", command=self._restore_previous_students)
@@ -399,6 +401,27 @@ class AppGUI:
         # --- SECTION 2: AUTOMATION LOCATIONS ---
         loc_frame = ttk.LabelFrame(right_pane, text="AUTOMATION LOCATIONS", padding="8")
         loc_frame.pack(fill=tk.X, pady=(0, 5))
+
+        # DOM control: drive Schoolhouse Smiles by control name instead of coordinates
+        dom_row = ttk.Frame(loc_frame)
+        dom_row.pack(fill=tk.X, pady=(0, 2))
+        self.var_use_dom = tk.BooleanVar(value=getattr(self.config, 'use_dom_control', True))
+        chk_dom = ttk.Checkbutton(dom_row, text="Use DOM Control (no coordinates)", variable=self.var_use_dom,
+                                  command=self._on_dom_toggle)
+        chk_dom.pack(side=tk.LEFT)
+        ToolTip(chk_dom, "Controls Schoolhouse Smiles directly through its page: Student Search, Card Type and Print are "
+                         "found by name, and each student record is confirmed loaded before printing. Requires Schoolhouse "
+                         "Smiles to be started with 'Launch in DOM Mode'. The X/Y locations below are only used as a "
+                         "fallback when DOM control is unavailable.")
+        btn_launch_dom = ttk.Button(dom_row, text="Launch in DOM Mode", command=self._launch_target_dom_mode)
+        btn_launch_dom.pack(side=tk.RIGHT)
+        ToolTip(btn_launch_dom, "Starts Schoolhouse Smiles with DOM control enabled (--remote-debugging-port). "
+                                "If it is already running without it, close it first.")
+
+        dom_status_row = ttk.Frame(loc_frame)
+        dom_status_row.pack(fill=tk.X, pady=(0, 4))
+        self.lbl_dom_status = ttk.Label(dom_status_row, text="DOM: checking...", font=("Arial", 8), foreground="#6c757d")
+        self.lbl_dom_status.pack(side=tk.LEFT)
 
         # Search Location
         s_row = ttk.Frame(loc_frame)
@@ -450,7 +473,19 @@ class AppGUI:
         self.var_card_type_required = tk.BooleanVar(value=getattr(self.config, 'card_type_required', False))
         chk_card_type_required = ttk.Checkbutton(cr_row, text="Required (click for every student)", variable=self.var_card_type_required)
         chk_card_type_required.pack(side=tk.LEFT)
-        ToolTip(chk_card_type_required, "When checked, the Card Type location is clicked for every student, immediately before Print. When unchecked, Card Type is never clicked.")
+        ToolTip(chk_card_type_required, "When checked, the Card Type is selected for every student, immediately before Print. When unchecked, Card Type is never touched.")
+
+        cn_row = ttk.Frame(loc_frame)
+        cn_row.pack(fill=tk.X, pady=(2, 0))
+        ttk.Label(cn_row, text="Card Type Name:", width=15).pack(side=tk.LEFT)
+        self.cmb_card_type_name = ttk.Combobox(cn_row, width=24)
+        self.cmb_card_type_name.pack(side=tk.LEFT, padx=2)
+        self.cmb_card_type_name.insert(0, getattr(self.config, 'card_type_name', ''))
+        ToolTip(self.cmb_card_type_name, "DOM control: the ID Card option to select for every student (e.g. 'Content Creator'), "
+                                         "used when 'Required' is checked. Leave blank to click the Card Type X/Y location instead.")
+        btn_refresh_card_types = ttk.Button(cn_row, text="🔄", width=3, command=self._refresh_dom_status)
+        btn_refresh_card_types.pack(side=tk.LEFT)
+        ToolTip(btn_refresh_card_types, "Reads the ID Card options from the student currently open in Schoolhouse Smiles.")
 
         # --- SECTION 3: TIMING & CONFIG ---
         timing_frame = ttk.LabelFrame(right_pane, text="TIMING & OPTIONS", padding="8")
@@ -706,6 +741,7 @@ class AppGUI:
 
         self._refresh_printer_list()
         self._start_queue_polling_loop()
+        self._refresh_dom_status()
 
     def _on_pause_setting_changed(self):
         """Called when user edits the pause after cards entry box."""
@@ -784,6 +820,92 @@ class AppGUI:
         self._update_pause_countdown(0)
         self.logger.log("Cleared all configuration input fields.")
 
+    def _on_dom_toggle(self):
+        self.config.use_dom_control = self.var_use_dom.get()
+        self._refresh_dom_status()
+
+    def _refresh_dom_status(self):
+        """
+        Checks the DOM connection on a background thread (it can take a couple of
+        seconds when nothing is listening) and updates the status label and the Card
+        Type choices on the Tk thread.
+        """
+        if not self.var_use_dom.get():
+            self.lbl_dom_status.config(text="DOM: off - using screen coordinates", foreground="#6c757d")
+            return
+
+        dom = self.automation.dom
+        dom.port = getattr(self.config, 'dom_debug_port', 9222)
+
+        def _check():
+            ok, reason = dom.connect()
+            card_types = []
+            if ok:
+                try:
+                    card_types = dom.list_card_types()
+                except Exception:
+                    pass
+
+            def _apply():
+                if ok:
+                    self.lbl_dom_status.config(text="DOM: connected to Schoolhouse Smiles", foreground="#28a745")
+                    if card_types:
+                        self.cmb_card_type_name.config(values=card_types)
+                else:
+                    self.lbl_dom_status.config(text=f"DOM: not available - {reason}", foreground="#cc6600")
+            self.root.after(0, _apply)
+
+        threading.Thread(target=_check, daemon=True).start()
+
+    def _is_target_running(self) -> bool:
+        try:
+            out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq schoolhouse-smiles.exe", "/NH"],
+                                 capture_output=True, text=True, timeout=10,
+                                 creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)).stdout
+            return "schoolhouse-smiles.exe" in out.lower()
+        except Exception:
+            return False
+
+    def _launch_target_dom_mode(self):
+        """Starts Schoolhouse Smiles with DOM control (and full accessibility) enabled."""
+        port = getattr(self.config, 'dom_debug_port', 9222)
+        self.automation.dom.port = port
+        if self.automation.dom.connect()[0]:
+            messagebox.showinfo("Already Running", "Schoolhouse Smiles is already running with DOM control.")
+            self._refresh_dom_status()
+            return
+
+        if self._is_target_running():
+            messagebox.showwarning(
+                "Close Schoolhouse Smiles First",
+                "Schoolhouse Smiles is running without DOM control.\n\n"
+                "Close it, then click 'Launch in DOM Mode' again.")
+            return
+
+        exe = getattr(self.config, 'target_exe_path', '')
+        if not exe or not os.path.exists(exe):
+            exe = filedialog.askopenfilename(
+                title="Locate schoolhouse-smiles.exe",
+                filetypes=[("Schoolhouse Smiles", "schoolhouse-smiles.exe"), ("Programs", "*.exe")])
+            if not exe:
+                return
+            self.config.target_exe_path = exe
+            self.config.save()
+
+        try:
+            subprocess.Popen(
+                [exe, "--force-renderer-accessibility", f"--remote-debugging-port={port}"],
+                cwd=os.path.dirname(exe), close_fds=True,
+                creationflags=getattr(subprocess, 'DETACHED_PROCESS', 0) | getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0))
+        except Exception as e:
+            messagebox.showerror("Launch Failed", f"Could not start Schoolhouse Smiles:\n{e}")
+            return
+
+        self.logger.log(f"Launched Schoolhouse Smiles in DOM mode (port {port}).")
+        self.lbl_dom_status.config(text="DOM: starting Schoolhouse Smiles...", foreground="#6c757d")
+        # The app needs a few seconds before its page accepts connections
+        self.root.after(6000, self._refresh_dom_status)
+
     def _save_ui_to_config(self) -> bool:
         try:
             sx = self.ent_search_x.get().strip()
@@ -817,6 +939,8 @@ class AppGUI:
             self.config.enable_mouse_trail = self.var_mouse_trail.get()
             self.config.dry_run = self.var_dry_run.get()
             self.config.card_type_required = self.var_card_type_required.get()
+            self.config.use_dom_control = self.var_use_dom.get()
+            self.config.card_type_name = self.cmb_card_type_name.get().strip()
 
             if hasattr(self, 'var_queue_sync'):
                 self.config.enable_queue_sync = self.var_queue_sync.get()
@@ -1135,6 +1259,20 @@ class AppGUI:
             pyperclip.copy(item_id)
             self.logger.log(f"Copied Student ID '{item_id}' to clipboard.")
             self.lbl_status.config(text=f"Status: Copied Student ID '{item_id}' to clipboard")
+
+    def _copy_selected_student_ids(self, event=None):
+        """Copies only the Student ID of each selected Treeview row, one per line."""
+        selected = self.student_tree.selection()
+        if not selected:
+            return
+        ids = [str(self.student_tree.item(iid, 'values')[0]) for iid in selected]
+        pyperclip.copy("\n".join(ids))
+        if len(ids) == 1:
+            self.logger.log(f"Copied Student ID '{ids[0]}' to clipboard.")
+            self.lbl_status.config(text=f"Status: Copied Student ID '{ids[0]}' to clipboard")
+        else:
+            self.logger.log(f"Copied {len(ids)} Student IDs to clipboard.")
+            self.lbl_status.config(text=f"Status: Copied {len(ids)} Student IDs to clipboard")
 
     def _copy_selected_students(self, event=None):
         """Copies all selected Treeview rows (ID, First Name, Last Name, Grade) to the
@@ -1468,7 +1606,12 @@ class AppGUI:
         if not self._save_ui_to_config():
             return
 
-        if messagebox.askyesno("Confirm Test Print", f"Click Print button at X: {self.config.print_x}, Y: {self.config.print_y}?\n\nThe click will occur 1 second after you click Yes to allow focus to return to your target app."):
+        if self.config.use_dom_control and self.automation.dom.connect()[0]:
+            prompt = "Click the Print button in Schoolhouse Smiles (DOM control)?\n\nThis prints the student that is currently open."
+        else:
+            prompt = (f"Click Print button at X: {self.config.print_x}, Y: {self.config.print_y}?\n\n"
+                      "The click will occur 1 second after you click Yes to allow focus to return to your target app.")
+        if messagebox.askyesno("Confirm Test Print", prompt):
             self.root.update()
             time.sleep(1.0)
             self.automation.test_print_click()
@@ -1482,13 +1625,24 @@ class AppGUI:
             messagebox.showwarning("No Students", "No student IDs loaded. Please select an Excel file.")
             return
 
-        if self.config.search_x == 0 and self.config.search_y == 0:
-            messagebox.showwarning("Location Required", "Please configure the Student Search location first.")
-            return
+        dom_ready = False
+        if self.config.use_dom_control:
+            self.automation.dom.port = self.config.dom_debug_port
+            dom_ready, dom_reason = self.automation.dom.connect()
+            if not dom_ready and not messagebox.askyesno(
+                    "DOM Control Unavailable",
+                    f"{dom_reason}\n\nUse 'Launch in DOM Mode' to start Schoolhouse Smiles with DOM control.\n\n"
+                    "Continue using the screen coordinates instead?"):
+                return
 
-        if self.config.print_x == 0 and self.config.print_y == 0 and not self.config.dry_run:
-            messagebox.showwarning("Location Required", "Please configure the Print Button location first.")
-            return
+        if not dom_ready:
+            if self.config.search_x == 0 and self.config.search_y == 0:
+                messagebox.showwarning("Location Required", "Please configure the Student Search location first.")
+                return
+
+            if self.config.print_x == 0 and self.config.print_y == 0 and not self.config.dry_run:
+                messagebox.showwarning("Location Required", "Please configure the Print Button location first.")
+                return
 
         total = len(self.student_ids)
         msg = f"You are about to process {total} students.\n\nThe application will automatically enter each Student ID"
@@ -1558,6 +1712,9 @@ class AppGUI:
         printed = 0
         skipped = 0
         errors = 0
+        # Students missing from Schoolhouse Smiles are skipped without stopping the
+        # batch, and listed in the end-of-run summary as "ID  First Last"
+        not_found: List[str] = []
         batch_counter = 0
         start_time = time.time()
         self.automation.reset_job_durations()
@@ -1635,6 +1792,14 @@ class AppGUI:
                     self.logger.log(f"Batch stopped on student {sid}")
                     break
 
+                if self.automation.last_failure_kind == self.automation.FAILURE_NOT_FOUND:
+                    rec = next((r for r in self.student_records if r['id'] == sid), {})
+                    name = f"{rec.get('first_name', '')} {rec.get('last_name', '')}".strip()
+                    not_found.append(f"{sid}  {name}".strip())
+                    self.logger.log(f"SKIPPED {sid}{' (' + name + ')' if name else ''}: not in Schoolhouse Smiles - continuing with the next student")
+                    self._pop_student(sid)
+                    continue
+
                 self.logger.error(msg)
 
                 # Show timeout modal prompt on main GUI thread
@@ -1660,7 +1825,7 @@ class AppGUI:
 
         elapsed = time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))
         
-        self.root.after(0, lambda: self._show_summary(total, printed, skipped, errors, elapsed))
+        self.root.after(0, lambda: self._show_summary(total, printed, skipped, errors, elapsed, not_found))
         self.is_processing = False
 
     def _update_progress_from_records(self):
@@ -1698,13 +1863,24 @@ class AppGUI:
         self.root.after(0, _upd)
 
     def _prompt_timeout_dialog(self, student_id: str, error_msg: str) -> str:
-        res_var = tk.StringVar(value="stop")
+        # "" means no answer yet. It must differ from every real choice: when the
+        # default was "stop", closing the dialog with its X (or never seeing it) left
+        # the automation thread waiting forever with the batch stuck "running".
+        res_var = tk.StringVar(value="")
+        dialog_ref = {}
 
         def _ask():
             dialog = tk.Toplevel(self.root)
+            dialog_ref['dialog'] = dialog
             dialog.title("Automation Timeout / Application Error")
             dialog.geometry("540x280")
             dialog.minsize(460, 240)
+            # Keep it in front of Schoolhouse Smiles so the operator actually sees it
+            dialog.transient(self.root)
+            dialog.attributes('-topmost', True)
+            dialog.protocol("WM_DELETE_WINDOW", lambda: _choose("stop"))
+            dialog.lift()
+            dialog.focus_force()
             dialog.grab_set()
 
             # Dock Bottom Action Buttons Row FIRST (side=tk.BOTTOM) so buttons are guaranteed visible
@@ -1737,16 +1913,27 @@ class AppGUI:
             dialog.wait_window()
 
         self.root.after(0, _ask)
-        # Wait for user input safely
-        while self.root.winfo_exists():
+        # Wait for an answer; the main STOP button (or ESC / corner stop) also ends the wait
+        choice = ""
+        while True:
             try:
-                if res_var.get() != "stop" or not self.is_processing:
-                    break
+                choice = res_var.get()
             except Exception:
+                choice = "stop"
+            if choice or self.automation.stop_event.is_set() or not self.is_processing:
                 break
             time.sleep(0.1)
 
-        return res_var.get()
+        if not choice:
+            choice = "stop"
+            # Stopped from elsewhere: close the now-pointless dialog
+            def _close():
+                dlg = dialog_ref.get('dialog')
+                if dlg is not None and dlg.winfo_exists():
+                    dlg.destroy()
+            self.root.after(0, _close)
+
+        return choice
 
     def _show_help_guide(self):
         """Displays interactive User Guide dialog explaining all options and buttons."""
@@ -1785,6 +1972,8 @@ class AppGUI:
                 ("Right-Click Menu", "Right-click anywhere inside the list to Copy ID, Remove Selected, Delete Prior, or Clear All.")
             ]),
             ("2. AUTOMATION LOCATIONS (SELECT LOCATION)", [
+                ("Use DOM Control", "Recommended. Controls Schoolhouse Smiles by control name instead of screen position, and confirms each student record loaded before printing. Start Schoolhouse Smiles with 'Launch in DOM Mode'. The X/Y locations are then only a fallback."),
+                ("Card Type Name", "With DOM control, the ID Card option to select for every student when 'Required' is ticked (click the refresh button with a student open to list the options)."),
                 ("Student Search", "Position mouse over the StudentSearch input box. Click 'Select Location' and wait 3s."),
                 ("Print Button", "Position mouse over the target Print Button. Click 'Select Location' and wait 3s."),
                 ("Card Type", "Optional. Position mouse over the Card Type selector and click 'Select Location'. Tick 'Required' to have that location clicked for every student, right before Print; leave it unticked to never click it.")
@@ -1821,7 +2010,8 @@ class AppGUI:
         scroll.pack(side=tk.RIGHT, fill=tk.Y)
         txt_box.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-    def _show_summary(self, total: int, printed: int, skipped: int, errors: int, elapsed: str):
+    def _show_summary(self, total: int, printed: int, skipped: int, errors: int, elapsed: str,
+                      not_found: List[str] = None):
         self.btn_start.config(state=tk.NORMAL)
         self.btn_pause.config(text="PAUSE", bg="#ffc107")
         self.lbl_status.config(text="Status: Complete")
@@ -1836,12 +2026,24 @@ class AppGUI:
             f"Successfully Printed: {printed}\n"
             f"Skipped:              {skipped}\n"
             f"Errors:               {errors}\n"
+            f"Not in Schoolhouse Smiles: {len(not_found or [])}\n"
             f"{timing_summary}\n\n"
             f"Elapsed Time: {elapsed}"
         )
         self.logger.log("==========================================")
         self.logger.log(summary_msg.replace("\n\n", " - "))
+        if not_found:
+            self.logger.log(f"Not in Schoolhouse Smiles ({len(not_found)}) - skipped automatically:")
+            for entry in not_found:
+                self.logger.log(f"    {entry}")
         self.logger.log("==========================================")
+
+        if not_found:
+            # Long lists are trimmed in the dialog; the log always has all of them
+            shown = not_found[:20]
+            summary_msg += f"\n\nSkipped - not in Schoolhouse Smiles ({len(not_found)}):\n" + "\n".join(shown)
+            if len(not_found) > len(shown):
+                summary_msg += f"\n...and {len(not_found) - len(shown)} more (see the log)"
 
         messagebox.showinfo("Printing Complete", summary_msg)
 
