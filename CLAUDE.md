@@ -38,7 +38,7 @@ python generate_test_excel.py
 
 There are no automated tests. The `test_*.xlsx` / `test_*.csv` / `test_*.zip` files in the repo root are hand-made fixtures for ad hoc manual testing of `ExcelHandler`, not a pytest suite.
 
-A release means editing the version in exactly two places: `APP_VERSION` in `version.py` (header banner, window title, splash, AppUserModelID) and `MyAppVersion` in `installer_setup/setup_builder.iss` (installer metadata, and the installer's filename via `OutputBaseFilename`). The Inno Setup preprocessor cannot import Python, which is why the two are not one. `dist/` and `build/` are gitignored, but installers under `installer_setup/Output/` **are** tracked in git, so a rebuild shows up as a large binary diff.
+A release means editing the version in exactly two places: `APP_VERSION` in `version.py` (header banner, window title, splash, AppUserModelID) and `MyAppVersion` in `installer_setup/setup_builder.iss` (installer metadata, and the installer's filename via `OutputBaseFilename`). The Inno Setup preprocessor cannot import Python, which is why the two are not one. `dist/`, `build/` and `installer_setup/Output/` are all gitignored, so built EXEs and installers never show up in git; distribute the installer from `installer_setup/Output/` directly.
 
 ## Architecture
 
