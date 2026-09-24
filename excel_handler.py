@@ -2,6 +2,7 @@ from typing import List, Tuple
 import warnings
 import pandas as pd
 import openpyxl
+from openpyxl.styles import Font
 
 # Suppress harmless openpyxl stylesheet warnings when reading Excel workbooks
 warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
@@ -119,6 +120,55 @@ class ExcelHandler:
 
         except Exception as e:
             return [], f"Error processing Excel file: {str(e)}"
+
+    # Canonical column headers recognised by load_photographed_students
+    TEMPLATE_COLUMNS = ['studentId', 'firstName', 'lastName', 'grade', 'status']
+
+    @classmethod
+    def export_template(cls, export_path: str) -> Tuple[bool, str]:
+        """
+        Writes an empty roster template with the canonical column headers.
+        For .xlsx, the studentId column is formatted as Text (so leading zeros survive
+        when pasting IDs) and a second 'Instructions' sheet explains each column;
+        only the first sheet is ever read on import.
+        """
+        try:
+            if export_path.lower().endswith('.csv'):
+                pd.DataFrame(columns=cls.TEMPLATE_COLUMNS).to_csv(export_path, index=False)
+                return True, f"Saved roster template to {export_path}"
+
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Students"
+            ws.append(cls.TEMPLATE_COLUMNS)
+            for cell in ws[1]:
+                cell.font = Font(bold=True)
+            ws.freeze_panes = "A2"
+            for col_letter, width in zip("ABCDE", (16, 18, 18, 8, 16)):
+                ws.column_dimensions[col_letter].width = width
+            # Text format for the studentId column so Excel keeps leading zeros
+            for row in range(2, 1002):
+                ws.cell(row=row, column=1).number_format = '@'
+
+            info = wb.create_sheet("Instructions")
+            info.append(["Column", "Required", "Description"])
+            for cell in info[1]:
+                cell.font = Font(bold=True)
+            info.append(["studentId", "Yes", "Student ID exactly as typed into the card printer search box. Keep as text to preserve leading zeros."])
+            info.append(["firstName", "No", "Student first name (shown in the list only)."])
+            info.append(["lastName", "No", "Student last name (shown in the list only)."])
+            info.append(["grade", "No", "Grade level (shown in the list only)."])
+            info.append(["status", "No", "Only rows with PHOTOGRAPHED are imported. If the column is omitted, every row is imported."])
+            info.append([])
+            info.append(["Only the first sheet (Students) is read on import. Column names are matched case-insensitively."])
+            info.column_dimensions['A'].width = 14
+            info.column_dimensions['B'].width = 10
+            info.column_dimensions['C'].width = 100
+
+            wb.save(export_path)
+            return True, f"Saved roster template to {export_path}"
+        except Exception as e:
+            return False, f"Error saving template: {str(e)}"
 
     @classmethod
     def export_remaining_students(cls, remaining_ids: List[str], export_path: str, remaining_records: List[dict] = None) -> Tuple[bool, str]:

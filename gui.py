@@ -283,6 +283,10 @@ class AppGUI:
         self.btn_sync_zip.pack(side=tk.LEFT, padx=2)
         ToolTip(self.btn_sync_zip, "Imports student records from sync archive zip file(s).")
 
+        btn_template = ttk.Button(btn_box, text="Export Template", command=self._export_template)
+        btn_template.pack(side=tk.LEFT, padx=2)
+        ToolTip(btn_template, "Saves a blank Excel/CSV file with the column names this app expects (studentId, firstName, lastName, grade, status).")
+
         # Row 2: Radiobuttons placed directly under the two import buttons (right-aligned)
         row2 = ttk.Frame(toolbar)
         row2.pack(fill=tk.X, pady=(2, 0))
@@ -1016,6 +1020,23 @@ class AppGUI:
             if success:
                 self.logger.log(msg)
                 messagebox.showinfo("Export Success", f"Saved {len(self.student_ids)} remaining student IDs to file:\n{file_path}")
+            else:
+                self.logger.error(msg)
+                messagebox.showerror("Export Error", msg)
+
+    def _export_template(self):
+        """Saves a blank roster template with the column names the importer recognises."""
+        file_path = filedialog.asksaveasfilename(
+            title="Export Roster Template",
+            initialfile="student_roster_template.xlsx",
+            defaultextension=".xlsx",
+            filetypes=[("Excel File", "*.xlsx"), ("CSV File", "*.csv")]
+        )
+        if file_path:
+            success, msg = ExcelHandler.export_template(file_path)
+            if success:
+                self.logger.log(msg)
+                messagebox.showinfo("Template Saved", f"Roster template saved to:\n{file_path}")
             else:
                 self.logger.error(msg)
                 messagebox.showerror("Export Error", msg)
@@ -1758,6 +1779,7 @@ class AppGUI:
             ("1. IMPORT MODES & FILE HANDLING", [
                 ("Single Mode", "Selects a single file (.xlsx / .csv / .zip sync archive) to load a new student list."),
                 ("Multiple Mode", "Allows selecting multiple files to merge/append into your active student list."),
+                ("Export Template", "Saves a blank .xlsx/.csv with the expected column names (studentId, firstName, lastName, grade, status) so you can match other spreadsheets to it."),
                 ("Save Remaining List", "Exports unprinted students to a CSV/XLSX file if you stop early."),
                 ("Restore Previous N", "Opens an interactive checkbox dialog to restore deleted or printed cards back to top of queue."),
                 ("Right-Click Menu", "Right-click anywhere inside the list to Copy ID, Remove Selected, Delete Prior, or Clear All.")
