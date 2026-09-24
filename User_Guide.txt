@@ -1,29 +1,53 @@
 # STUDENT PHOTO PRINT AUTOMATOR - USER GUIDE & MANUAL
 
 ## 1. IMPORT MODES & FILE HANDLING
-- **Single Mode**: Selects a single file (.xlsx / .csv / .zip sync archive) to load a new student list.
-- **Multiple Mode**: Allows selecting multiple files to merge/append into your active student list.
-- **Save Remaining List**: Exports unprinted students to a CSV/XLSX file if you stop early.
-- **Restore Previous N**: Opens an interactive checkbox dialog to restore deleted or printed cards back to top of queue.
-- **Right-Click Menu**: Right-click anywhere inside the list to Copy ID, Remove Selected, Delete Prior, or Clear All.
+- **Import Excel/CSV**: Loads photographed students from an .xlsx / .xls / .csv file. Only rows whose status is PHOTOGRAPHED are imported; leading zeros in student IDs are kept.
+- **Import Sync File(s)**: Loads students from sync archive .zip file(s). Only students with a photo in the archive are imported.
+- **Single Mode**: Importing a file replaces the current student list.
+- **Multiple Mode**: Lets you select several files and appends/merges them into the current list.
+- **Export Template**: Saves a blank .xlsx/.csv with the expected column names (studentId, firstName, lastName, grade, status) and a notes row explaining each one (skipped on import), so you can match other spreadsheets to it.
+- **Search (ID / Name)**: Type a student ID, first name, last name or grade to highlight matching students. Click a column heading to sort.
+- **Remove Selected / Delete Prior**: Removes the highlighted student(s), or every student above the highlighted one.
+- **Restore Prior N**: Opens a checkbox dialog to put printed or removed students back at the top of the queue.
+- **Save Remaining List / Load Saved List**: Exports the unprinted students to CSV/XLSX if you stop early, and loads such a list back later.
+- **Right-Click Menu**: Right-click anywhere inside the list to Copy ID, Remove Selected, Delete Prior, or Clear All. Double-click a row to copy its ID.
 
-## 2. AUTOMATION LOCATIONS (SELECT LOCATION)
-- **Student Search**: Position mouse over the StudentSearch input box. Click 'Select Location' and wait 3s.
-- **Print Button**: Position mouse over the target Print Button. Click 'Select Location' and wait 3s.
+## 2. AUTOMATION LOCATIONS
+- **Use DOM Control**: Recommended. Controls Schoolhouse Smiles by control name instead of screen position, and confirms each student record loaded before printing. The X/Y locations below are then only a fallback.
+- **Launch in DOM Mode**: Starts Schoolhouse Smiles with DOM control enabled. If it is already running normally, close it first. The first time, you may be asked to locate schoolhouse-smiles.exe.
+- **DOM Status**: The line under the checkbox shows whether DOM control is connected. If it is not, printing falls back to the screen locations.
+- **Student Search**: Position mouse over the Student Search input box. Click 'Select Location' and wait 3s.
+- **Print Button**: Position mouse over the Print button. Click 'Select Location' and wait 3s.
+- **Card Type**: Optional. Position mouse over the Card Type selector and click 'Select Location'. Tick 'Required' to have Card Type selected for every student, right before Print; leave it unticked to never touch it.
+- **Card Type Name**: With DOM control, the ID Card option to select for every student when 'Required' is ticked. Open a student in Schoolhouse Smiles and click the refresh button to list the options. Leave blank to click the Card Type location instead.
 
 ## 3. TIMING & CONFIGURATION OPTIONS
-- **Search Start Delay (s)**: Delay (in seconds) after clicking the search box before pasting Student ID.
-- **Max Search Wait (s)**: Maximum seconds to wait for StudentSearch verification to complete.
-- **Print Delay (s)**: Delay after clicking Print to allow Windows printer queue to register the job.
-- **Between Student Delay (s)**: Pause duration before advancing to the next student in sequence.
-- **Print Hotkey**: Alternative keyboard shortcut (e.g. 'ctrl+p') used if mouse click location is bypassed.
-- **Pause after every N cards**: Automatically pauses batch execution after processing N cards.
+- **Search Start Delay (s)**: Delay after clicking the search box before entering the Student ID.
+- **Max Search Wait (s)**: Maximum seconds to wait for the student record to load before the student fails.
+- **Print Delay (s)**: Delay after clicking Print to allow the Windows printer queue to register the job.
+- **Between Student Delay (s)**: Pause before advancing to the next student.
+- **Print Hotkey**: Keyboard shortcut (e.g. 'ctrl+p') used only if the Print button cannot be clicked.
+- **Load Default Values / Clear All Fields**: Resets the timing options to recommended values, or clears all locations and timing boxes.
+- **Visible Mouse Movement Trail**: Draws an arrow and target ring for every automated click and moves the cursor slowly, so you can see where each click lands.
+- **Require Strict StudentSearch Verification**: Confirms the search found the student before printing (screen-location mode; DOM control always confirms).
+- **Dry Run**: Suppresses only the final Print click. Every other step - searching, loading the student and selecting Card Type - still happens for real in Schoolhouse Smiles.
 
-## 4. PRINT QUEUE MONITORING & THROTTLING
-- **Printer Queue Dropdown**: Select your target Windows printer (e.g. 'NullPrinter' or card printer).
-- **Thermometer Gauge**: Color-coded real-time visualizer showing active print jobs in queue.
-- **Sync Batch with Queue**: When checked, batch automation automatically pauses whenever queue depth reaches 'Max Running Jobs' and resumes as soon as jobs clear.
+## 4. TESTING
+- **Test Current Student**: Searches for the highlighted student (or the first in the list) and confirms the record loads. It does not select Card Type or print.
+- **Test Print**: After you confirm, clicks Print once for whichever student is open in Schoolhouse Smiles. This prints a real card.
 
-## 5. SAFETY & EMERGENCY CONTROLS
-- **Emergency Stop**: Press ESC key anytime or move mouse cursor to the upper-left screen corner.
-- **Dry Run**: Simulates card search and verification without clicking the final Print button.
+## 5. PRINT QUEUE MONITORING & THROTTLING
+- **Printer Queue Dropdown**: Select your target Windows printer (e.g. 'NullPrinter' or the card printer). The refresh button re-reads installed printers.
+- **Thermometer Gauge**: Color-coded real-time view of the active print jobs in the queue, with job timing (min / max / average).
+- **Auto-Monitor Queue / Check Queue Now**: Checks the queue every second, or once on demand.
+- **Sync Batch with Queue**: When checked, the batch pauses whenever the queue reaches 'Max Running Jobs' and resumes as soon as jobs clear.
+
+## 6. RUNNING A BATCH
+- **START / PAUSE / STOP**: Starts the batch, pauses/resumes after the current student, or stops it.
+- **Pause after every N cards**: Automatically pauses the batch after every N cards (0 = no auto-pause).
+- **Failed Student**: If a student fails, a warning offers RETRY, SKIP or STOP.
+- **Not in Schoolhouse Smiles**: With DOM control, a student ID that Schoolhouse Smiles cannot find is skipped automatically and listed in the end-of-run summary.
+
+## 7. SAFETY & EMERGENCY CONTROLS
+- **Emergency Stop**: Press ESC anytime, or move the mouse cursor to the upper-left screen corner.
+- **Window Placement**: Keep this window from covering Schoolhouse Smiles. Screen-location clicks land on whatever window is on top.

@@ -1,37 +1,28 @@
-# Student Photo Printing Automation App
+# Student Photo Print Automator
 
-A Windows desktop application in Python for automated student photo printing based on data from an Excel spreadsheet.
+A Windows desktop application that prints student ID cards in bulk through **Schoolhouse Smiles**. It loads a roster of photographed students, then for each student it searches Schoolhouse Smiles, confirms the right record loaded, selects the card type and clicks Print, repeating until the batch is done.
 
 ## Features
 
-- **Excel Parsing & String Preservation**: Reads `.xlsx` and `.xls` files, matches `studentId` and `status` columns case-insensitively, filters `status = PHOTOGRAPHED` (case-insensitive, trimmed), and preserves leading zeros (e.g., `001234`).
-- **Coordinate Pickers**: Interactive 3-second countdown to select mouse coordinates for **Student Search** and **Print** buttons.
-- **Safety Verification**: Verifies `StudentSearch` input via UIAutomation or clipboard copy verification before clicking Print.
-- **Dry Run Mode**: Test full workflow without actually triggering print clicks.
-- **Thread-safe Controls**: Fully responsive Tkinter GUI during automation with non-blocking **START**, **PAUSE**, and **STOP** controls.
-- **Emergency Corner Stop**: Move the mouse to the upper-left corner of the screen `(0, 0)` at any time to instantly stop execution.
-- **Configuration Persistence**: Automatically saves X/Y coordinates, timing values, and dry run options to `%APPDATA%/StudentPhotoPrintAutomator/config.json`.
-- **Log Management**: Displays live timestamped logs in GUI and writes logs to `%LOCALAPPDATA%/StudentPhotoPrintAutomator/logs/`.
+- **DOM Control (recommended)**: Drives Schoolhouse Smiles through its page, finding Student Search, Card Type and Print by name rather than by screen position. Each student record is confirmed loaded (the `Student ID` field must match) before Print is clicked, and students that Schoolhouse Smiles cannot find are skipped and listed at the end of the run.
+- **Screen-Location Fallback**: If DOM control is off or unavailable, clicks configured X/Y locations picked with a 3-second countdown, and verifies the search box contents before searching.
+- **Roster Import**: Reads `.xlsx`, `.xls` and `.csv` files (case-insensitive `studentId`, `firstName`, `lastName`, `grade`, `status` columns, keeping rows where `status` is `PHOTOGRAPHED`), or sync-archive `.zip` files (students with a photo). Leading zeros in IDs are preserved. **Export Template** writes a blank file with the expected columns.
+- **Queue Management**: Search, sort, remove, restore and save/reload the remaining list if you stop early.
+- **Print Queue Throttling**: Monitors the selected Windows printer queue and can pause the batch while it is full.
+- **Dry Run Mode**: Runs every step for real except the final Print click.
+- **Emergency Stops**: Press **ESC**, or move the mouse to the upper-left corner of the screen `(0, 0)`, to stop instantly.
+- **Settings & Logs**: Settings are saved to `%APPDATA%\StudentPhotoPrintAutomator\config.json`; timestamped logs are shown live and written to `%LOCALAPPDATA%\StudentPhotoPrintAutomator\logs\`.
 
 ---
 
-## Installation Instructions
+## Installation
 
-1. Ensure Python **3.11+** is installed on your Windows system.
-2. Clone or extract this repository into a folder.
-3. Open PowerShell or Command Prompt in the application directory and install required packages:
+**For end users**: run `StudentPhotoPrintAutomator_Setup_v<version>.exe`. It installs the app and a Start-menu **User Guide & Reference**.
+
+**From source** (Python **3.11+** on Windows):
 
 ```bash
 pip install -r requirements.txt
-```
-
----
-
-## How to Run the Application
-
-Run the python script directly:
-
-```bash
 python main.py
 ```
 
@@ -39,51 +30,59 @@ python main.py
 
 ## Step-by-Step Operating Guide
 
-### 1. Select Photographed List
-1. Click **Photographed List**.
-2. Choose your `.xlsx` or `.xls` spreadsheet containing `studentId` and `status` columns.
-3. The app will filter all rows where `status` is `PHOTOGRAPHED` and display the ID list and count.
+The full reference for every button and option is in [`User_Guide.txt`](User_Guide.txt), also available in the app via **❓ Help & Guide**.
 
-### 2. Configure Locations
-1. Click **Select Location** under **Student Search**.
-2. You will have a 3-second countdown. Position your mouse cursor directly over the Student Search textbox in your target app.
-3. Repeat the step for the **Print Button** location.
+### 1. Start Schoolhouse Smiles in DOM mode
+1. Close Schoolhouse Smiles if it is already open.
+2. In **Automation Locations**, leave **Use DOM Control** ticked and click **Launch in DOM Mode**. The first time, you may be asked to locate `schoolhouse-smiles.exe`.
+3. The status line should read **DOM: connected to Schoolhouse Smiles**.
 
-### 3. Configure Timing Options
-- **Search Start Delay**: Pause after clicking the search box before pasting ID (Default: `0.5s`).
-- **Maximum Search Wait**: Max wait time for search verification (Default: `15.0s`).
-- **Print Delay**: Wait time after clicking print to allow physical spooling/duplex rendering (Default: `4.0s`).
-- **Between Student Delay**: Pause before starting next student (Default: `1.5s`).
-- **Load Default Values**: Click to reset/fill timing fields with recommended defaults optimized for card printers.
+### 2. Load the student list
+1. Click **Import Excel/CSV** or **Import Sync File(s)**. Choose **Multiple** mode to merge several files.
+2. The count of photographed students appears above the list.
 
-### 4. Using Dry Run Mode
-Check the **Dry Run** box to execute search box selection, clearing, pasting, and student verification without clicking the Print button.
+### 3. Choose the Card Type (optional)
+Open any student in Schoolhouse Smiles, click the 🔄 button next to **Card Type Name**, pick the card, and tick **Required** to have it selected for every student.
 
-### 5. Test Functions
-- **Test Current Student**: Tests pasting and verifying the currently selected student ID in the listbox without clicking Print.
-- **Test Print**: Prompts for confirmation and clicks the configured Print button coordinates once.
+### 4. Screen locations (fallback only)
+Only needed without DOM control: click **Select Location** next to **Student Search**, **Print Button** and optionally **Card Type**, then hold the mouse over that control in Schoolhouse Smiles during the 3-second countdown.
 
-### 6. Start Printing Batch
-1. Click **START**.
-2. Confirm the prompt displaying the number of students to process.
-3. Monitor progress and live logs. Use **PAUSE** or **STOP** as needed.
-4. If an emergency occurs, move your mouse to the **upper-left corner** of the screen.
+### 5. Timing options
+- **Search Start Delay**: Pause after clicking the search box before entering the ID.
+- **Max Search Wait**: How long to wait for the student record to load before the student fails.
+- **Print Delay**: Wait after clicking Print so the job reaches the Windows queue.
+- **Between Student Delay**: Pause before starting the next student.
+- **Load Default Values**: Fills in recommended defaults for card printers.
+
+### 6. Test
+- **Test Current Student**: Searches for the highlighted student and confirms the record loads, without printing.
+- **Test Print**: Clicks Print once for the student currently open. This prints a real card.
+- **Dry Run**: Tick it to run a whole batch without clicking Print. Searching and Card Type selection still happen for real.
+
+### 7. Print the batch
+1. Click **START** and confirm the number of students.
+2. Watch progress, the ETA and the log. Use **PAUSE** or **STOP** as needed. If a student fails you are offered **RETRY**, **SKIP** or **STOP**.
+3. For an emergency, press **ESC** or move the mouse to the **upper-left corner** of the screen.
+4. Keep this window from covering Schoolhouse Smiles, since screen-location clicks land on whatever window is on top.
 
 ---
 
-## Standalone Executable (.exe) Creation with PyInstaller
+## Building the EXE and Installer
 
-To package the application into a single executable for distribution:
+Run from the repository root:
 
-1. Install PyInstaller (included in `requirements.txt`):
-   ```bash
-   pip install pyinstaller
-   ```
+```bash
+# Standalone one-file EXE -> dist\StudentPhotoPrintAutomator.exe
+build_exe.bat
 
-2. Build the single-file executable:
-   ```bash
-   pyinstaller --noconfirm --onedir --windowed --hidden-import=numpy --collect-all=pandas --collect-all=openpyxl --name "StudentPhotoPrintAutomator" main.py
-   ```
+# Inno Setup installer (needs Inno Setup 6 or 7)
+# -> installer_setup\Output\StudentPhotoPrintAutomator_Setup_v<version>.exe
+build_installer.bat
 
-3. The generated standalone folder will be available inside `dist/StudentPhotoPrintAutomator/StudentPhotoPrintAutomator.exe`.
+# Both in one step
+build_all.cmd
+```
 
+PyInstaller is invoked as `python -m PyInstaller` using `StudentPhotoPrintAutomator.spec`, so it works even when the `pyinstaller` command is not on your PATH. Download Inno Setup from <https://jrsoftware.org/isdl.php>.
+
+To release a new version, update `APP_VERSION` in `version.py` **and** `MyAppVersion` in `installer_setup/setup_builder.iss`.

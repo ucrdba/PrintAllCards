@@ -1935,6 +1935,28 @@ class AppGUI:
 
         return choice
 
+    @staticmethod
+    def _load_user_guide_sections():
+        """Parses User_Guide.txt (bundled beside the EXE) into [(heading, [(label, text), ...]), ...].
+
+        The same file is installed as the Start-menu User Guide, so the Help window and it never drift apart.
+        """
+        base_dir = getattr(sys, '_MEIPASS', os.path.dirname(__file__))
+        path = os.path.join(base_dir, 'User_Guide.txt')
+        sections = []
+        try:
+            with open(path, encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith('## '):
+                        sections.append((line[3:].strip(), []))
+                    elif line.startswith('- **') and sections:
+                        label, _, desc = line[4:].partition('**')
+                        sections[-1][1].append((label.strip(), desc.lstrip(':').strip()))
+        except OSError as e:
+            return [("USER GUIDE NOT FOUND", [("Missing file", f"Could not read {path}: {e}")])]
+        return sections
+
     def _show_help_guide(self):
         """Displays interactive User Guide dialog explaining all options and buttons."""
         dialog = tk.Toplevel(self.root)
@@ -1962,45 +1984,12 @@ class AppGUI:
         txt_box.tag_config("bullet", lmargin1=15, lmargin2=30, spacing1=3, spacing3=3)
         txt_box.tag_config("bold", font=("Segoe UI", 10, "bold"))
 
-        sections = [
-            ("1. IMPORT MODES & FILE HANDLING", [
-                ("Single Mode", "Selects a single file (.xlsx / .csv / .zip sync archive) to load a new student list."),
-                ("Multiple Mode", "Allows selecting multiple files to merge/append into your active student list."),
-                ("Export Template", "Saves a blank .xlsx/.csv with the expected column names (studentId, firstName, lastName, grade, status) and a notes row explaining each one (skipped on import), so you can match other spreadsheets to it."),
-                ("Save Remaining List", "Exports unprinted students to a CSV/XLSX file if you stop early."),
-                ("Restore Previous N", "Opens an interactive checkbox dialog to restore deleted or printed cards back to top of queue."),
-                ("Right-Click Menu", "Right-click anywhere inside the list to Copy ID, Remove Selected, Delete Prior, or Clear All.")
-            ]),
-            ("2. AUTOMATION LOCATIONS (SELECT LOCATION)", [
-                ("Use DOM Control", "Recommended. Controls Schoolhouse Smiles by control name instead of screen position, and confirms each student record loaded before printing. Start Schoolhouse Smiles with 'Launch in DOM Mode'. The X/Y locations are then only a fallback."),
-                ("Card Type Name", "With DOM control, the ID Card option to select for every student when 'Required' is ticked (click the refresh button with a student open to list the options)."),
-                ("Student Search", "Position mouse over the StudentSearch input box. Click 'Select Location' and wait 3s."),
-                ("Print Button", "Position mouse over the target Print Button. Click 'Select Location' and wait 3s."),
-                ("Card Type", "Optional. Position mouse over the Card Type selector and click 'Select Location'. Tick 'Required' to have that location clicked for every student, right before Print; leave it unticked to never click it.")
-            ]),
-            ("3. TIMING & CONFIGURATION OPTIONS", [
-                ("Search Start Delay (s)", "Delay (in seconds) after clicking the search box before pasting Student ID."),
-                ("Max Search Wait (s)", "Maximum seconds to wait for StudentSearch verification to complete."),
-                ("Print Delay (s)", "Delay after clicking Print to allow Windows printer queue to register the job."),
-                ("Between Student Delay (s)", "Pause duration before advancing to the next student in sequence."),
-                ("Print Hotkey", "Alternative keyboard shortcut (e.g. 'ctrl+p') used if mouse click location is bypassed."),
-                ("Pause after every N cards", "Automatically pauses batch execution after processing N cards.")
-            ]),
-            ("4. PRINT QUEUE MONITORING & THROTTLING", [
-                ("Printer Queue Dropdown", "Select your target Windows printer (e.g. 'NullPrinter' or card printer)."),
-                ("Thermometer Gauge", "Color-coded real-time visualizer showing active print jobs in queue."),
-                ("Sync Batch with Queue", "When checked, batch automation automatically pauses whenever queue depth reaches 'Max Running Jobs' and resumes as soon as jobs clear.")
-            ]),
-            ("5. SAFETY & EMERGENCY CONTROLS", [
-                ("Emergency Stop", "Press ESC key anytime or move mouse cursor to the upper-left screen corner."),
-                ("Dry Run", "Simulates card search and verification without clicking the final Print button.")
-            ])
-        ]
+        sections = self._load_user_guide_sections()
 
         for sec_title, items in sections:
             txt_box.insert(tk.END, f"{sec_title}\n", "h1")
             for label, desc in items:
-                idx_start = txt_box.index(tk.END)
+                idx_start = txt_box.index("end-1c")
                 txt_box.insert(tk.END, f"• {label}: ", "bullet")
                 txt_box.tag_add("bold", idx_start, f"{idx_start}+{len(label)+4}c")
                 txt_box.insert(tk.END, f"{desc}\n", "bullet")
