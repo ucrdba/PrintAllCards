@@ -11,7 +11,7 @@ REM Suppress setuptools pkg_resources UserWarning during PyInstaller compilation
 set PYTHONWARNINGS=ignore
 
 echo [1/2] Building PyInstaller Standalone Executable...
-pyinstaller --clean StudentPhotoPrintAutomator.spec
+python -m PyInstaller --clean StudentPhotoPrintAutomator.spec
 
 if %ERRORLEVEL% NEQ 0 (
     echo.

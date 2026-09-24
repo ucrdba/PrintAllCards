@@ -22,7 +22,7 @@ python main.py
 # Build the standalone one-file EXE -> dist\StudentPhotoPrintAutomator.exe
 build_exe.bat
 # or, from a shell without .bat support:
-pyinstaller --clean StudentPhotoPrintAutomator.spec
+python -m PyInstaller --clean StudentPhotoPrintAutomator.spec
 
 # Build the Inno Setup installer (the script probes for Inno Setup 7 then 6,
 # in both Program Files locations, then PATH)
