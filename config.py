@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 
 @dataclass
 class AppConfig:
@@ -30,6 +30,9 @@ class AppConfig:
     use_dom_control: bool = True
     dom_debug_port: int = 9222
     card_type_name: str = ""
+    # ID Card options last read from Schoolhouse Smiles, so the Card Type Name list
+    # is filled at startup (the options only exist on the page while a student is open)
+    card_type_options: list = field(default_factory=list)
     target_exe_path: str = r"C:\Program Files\schoolhouse-smiles\schoolhouse-smiles.exe"
 
     @classmethod

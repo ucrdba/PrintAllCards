@@ -479,7 +479,8 @@ class AppGUI:
         cn_row = ttk.Frame(loc_frame)
         cn_row.pack(fill=tk.X, pady=(2, 0))
         ttk.Label(cn_row, text="Card Type Name:", width=15).pack(side=tk.LEFT)
-        self.cmb_card_type_name = ttk.Combobox(cn_row, width=24)
+        self.cmb_card_type_name = ttk.Combobox(cn_row, width=24, values=list(getattr(self.config, 'card_type_options', [])),
+                                               postcommand=self._on_card_type_dropdown)
         self.cmb_card_type_name.pack(side=tk.LEFT, padx=2)
         self.cmb_card_type_name.insert(0, getattr(self.config, 'card_type_name', ''))
         ToolTip(self.cmb_card_type_name, "DOM control: the ID Card option to select for every student (e.g. 'Content Creator'), "
@@ -851,7 +852,7 @@ class AppGUI:
                 if ok:
                     if card_types:
                         self.lbl_dom_status.config(text="DOM: connected to Schoolhouse Smiles", foreground="#28a745")
-                        self.cmb_card_type_name.config(values=card_types)
+                        self._set_card_type_options(card_types)
                     else:
                         self.lbl_dom_status.config(
                             text="DOM: connected - open a student in Schoolhouse Smiles, then click 🔄 to list card types",
@@ -861,6 +862,25 @@ class AppGUI:
             self.root.after(0, _apply)
 
         threading.Thread(target=_check, daemon=True).start()
+
+    def _set_card_type_options(self, card_types):
+        """Shows these ID Card options in the Card Type Name list and remembers them for the next startup."""
+        self.cmb_card_type_name.config(values=card_types)
+        if card_types != self.config.card_type_options:
+            self.config.card_type_options = list(card_types)
+            self.config.save()
+
+    def _on_card_type_dropdown(self):
+        """Re-reads the ID Card options as the list opens, when DOM control is already connected and idle."""
+        dom = self.automation.dom
+        if not self.var_use_dom.get() or self.is_processing or dom._ws is None:
+            return
+        try:
+            card_types = dom.list_card_types()
+        except Exception:
+            return
+        if card_types:
+            self._set_card_type_options(card_types)
 
     def _is_target_running(self) -> bool:
         try:

@@ -19,7 +19,7 @@
 - **Student Search**: Position mouse over the Student Search input box. Click 'Select Location' and wait 3s.
 - **Print Button**: Position mouse over the Print button. Click 'Select Location' and wait 3s.
 - **Card Type**: Optional. Position mouse over the Card Type selector and click 'Select Location'. Tick 'Required' to have Card Type selected for every student, right before Print; leave it unticked to never touch it.
-- **Card Type Name**: With DOM control, the ID Card option to select for every student when 'Required' is ticked. Open a student in Schoolhouse Smiles and click the refresh button to list the options. Leave blank to click the Card Type location instead.
+- **Card Type Name**: With DOM control, the ID Card option to select for every student when 'Required' is ticked. The list is read from Schoolhouse Smiles whenever a student is open there (at startup, on the refresh button, or when you open the list) and remembered for next time. Leave blank to click the Card Type location instead.
 
 ## 3. TIMING & CONFIGURATION OPTIONS
 - **Search Start Delay (s)**: Delay after clicking the search box before entering the Student ID.
