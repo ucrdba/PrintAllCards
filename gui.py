@@ -848,9 +848,13 @@ class AppGUI:
 
             def _apply():
                 if ok:
-                    self.lbl_dom_status.config(text="DOM: connected to Schoolhouse Smiles", foreground="#28a745")
                     if card_types:
+                        self.lbl_dom_status.config(text="DOM: connected to Schoolhouse Smiles", foreground="#28a745")
                         self.cmb_card_type_name.config(values=card_types)
+                    else:
+                        self.lbl_dom_status.config(
+                            text="DOM: connected - open a student in Schoolhouse Smiles, then click 🔄 to list card types",
+                            foreground="#28a745")
                 else:
                     self.lbl_dom_status.config(text=f"DOM: not available - {reason}", foreground="#cc6600")
             self.root.after(0, _apply)

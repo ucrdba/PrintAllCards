@@ -24,6 +24,8 @@ except ImportError:
 
 TARGET_EXE_MARKER = "schoolhouse-smiles"
 TARGET_TITLE = "School House Photo"
+# Heading of the radio group that holds the card types (Student ID, Student ASB, ...)
+CARD_TYPE_GROUP = "ID Card"
 
 # Injected into every evaluation (the page can reload, so nothing is kept as a global).
 # __norm drops the required-field '*' so 'Student ID *' matches 'Student ID'.
@@ -40,7 +42,19 @@ const __field = label => {
   return null;
 };
 const __button = text => [...document.querySelectorAll('button')].find(b => __norm(b.innerText) === __norm(text)) || null;
-const __radio = label => [...document.querySelectorAll('mat-radio-button')].find(r => __norm(r.innerText) === __norm(label)) || null;
+// Radios of the mat-radio-group headed by this text (e.g. <h6>ID Card</h6><mat-radio-group>).
+// Scoped so other radio groups on the page (such as the Local/Network printer choice) are never read.
+const __groupRadios = heading => {
+  for (const g of document.querySelectorAll('mat-radio-group')) {
+    let named = __norm(g.getAttribute('aria-label')) === __norm(heading);
+    for (let e = g.previousElementSibling; e && !named; e = e.previousElementSibling) {
+      named = __norm(e.innerText) === __norm(heading);
+    }
+    if (named) return [...g.querySelectorAll('mat-radio-button')];
+  }
+  return [];
+};
+const __radio = (heading, label) => __groupRadios(heading).find(r => __norm(r.innerText) === __norm(label)) || null;
 const __center = el => {
   el.scrollIntoView({block: 'center', inline: 'center'});
   const r = el.getBoundingClientRect();
@@ -226,21 +240,23 @@ class DomDriver:
         return True
 
     def list_card_types(self) -> List[str]:
-        return self._js("return [...document.querySelectorAll('mat-radio-button')].map(r => r.innerText.trim()).filter(Boolean);") or []
+        """The ID Card options for the open student ([] when no student is open)."""
+        return self._js(
+            f"return __groupRadios({json.dumps(CARD_TYPE_GROUP)}).map(r => r.innerText.trim()).filter(Boolean);") or []
 
     def selected_card_type(self) -> Optional[str]:
         return self._js(
-            "const r = [...document.querySelectorAll('mat-radio-button')].find(r => r.classList.contains('mat-radio-checked'));"
+            f"const r = __groupRadios({json.dumps(CARD_TYPE_GROUP)}).find(r => r.classList.contains('mat-radio-checked'));"
             " return r ? r.innerText.trim() : null;")
 
     def click_card_type(self, label: str) -> Optional[bool]:
         """
-        Clicks the radio button with this label unless it is already selected.
+        Clicks the ID Card radio button with this label unless it is already selected.
         Returns None if no such radio exists, False if it was already selected,
         True if it was clicked.
         """
         pos = self._js(
-            f"const r = __radio({json.dumps(label)}); if (!r) return null;"
+            f"const r = __radio({json.dumps(CARD_TYPE_GROUP)}, {json.dumps(label)}); if (!r) return null;"
             " if (r.classList.contains('mat-radio-checked')) return false;"
             " return __center(r.querySelector('label') || r);")
         if pos is None:
