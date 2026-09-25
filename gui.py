@@ -20,6 +20,7 @@ from config import AppConfig
 from logger import AppLogger
 from excel_handler import ExcelHandler
 from automation import AutomationController
+from dom_driver import get_print_server_printers
 from version import APP_VERSION
 
 
@@ -580,7 +581,7 @@ class AppGUI:
         self.combo_printers = ttk.Combobox(q_top_box, state="readonly")
         self.combo_printers.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
         self.combo_printers.bind("<<ComboboxSelected>>", self._on_printer_selected)
-        ToolTip(self.combo_printers, "Select the target Windows printer queue to monitor.")
+        ToolTip(self.combo_printers, "Select the target Windows printer queue to monitor. Defaults to the printer Schoolhouse Smiles is set to print to.")
 
         btn_refresh_printers = ttk.Button(q_top_box, text="🔄", width=3, command=self._refresh_printer_list)
         btn_refresh_printers.pack(side=tk.RIGHT)
@@ -2065,8 +2066,13 @@ class AppGUI:
 
         self.combo_printers['values'] = printers
 
-        # Default selection: preference order -> config -> NullPrinter -> first printer
+        # Default selection: preference order -> Schoolhouse Smiles' printer -> config -> NullPrinter -> first printer
         target_printer = self.config.selected_printer or "NullPrinter"
+        smiles_printers = [p for p in get_print_server_printers() if p in printers]
+        if smiles_printers:
+            if smiles_printers[0] != target_printer:
+                self.logger.log(f"Print queue set to Schoolhouse Smiles' printer: {smiles_printers[0]}")
+            target_printer = smiles_printers[0]
         if target_printer in printers:
             self.combo_printers.set(target_printer)
         elif "NullPrinter" in printers:

@@ -37,7 +37,7 @@
 - **Test Print**: After you confirm, clicks Print once for whichever student is open in Schoolhouse Smiles. This prints a real card.
 
 ## 5. PRINT QUEUE MONITORING & THROTTLING
-- **Printer Queue Dropdown**: Select your target Windows printer (e.g. 'NullPrinter' or the card printer). The refresh button re-reads installed printers.
+- **Printer Queue Dropdown**: The Windows printer to monitor. It is set automatically to the printer Schoolhouse Smiles prints to (e.g. 'Evolis Primacy'); you can still pick another. The refresh button re-reads installed printers and Schoolhouse Smiles' printer.
 - **Thermometer Gauge**: Color-coded real-time view of the active print jobs in the queue, with job timing (min / max / average).
 - **Auto-Monitor Queue / Check Queue Now**: Checks the queue every second, or once on demand.
 - **Sync Batch with Queue**: When checked, the batch pauses whenever the queue reaches 'Max Running Jobs' and resumes as soon as jobs clear.

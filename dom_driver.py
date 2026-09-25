@@ -26,6 +26,8 @@ TARGET_EXE_MARKER = "schoolhouse-smiles"
 TARGET_TITLE = "School House Photo"
 # Heading of the radio group that holds the card types (Student ID, Student ASB, ...)
 CARD_TYPE_GROUP = "ID Card"
+# Schoolhouse Smiles' local print server, which holds its selected printer(s)
+PRINT_SERVER_URL = "http://127.0.0.1:45696"
 
 # Injected into every evaluation (the page can reload, so nothing is kept as a global).
 # __norm drops the required-field '*' so 'Student ID *' matches 'Student ID'.
@@ -62,6 +64,21 @@ const __center = el => {
   return {x: r.left + r.width / 2, y: r.top + r.height / 2};
 };
 """
+
+
+def get_print_server_printers(timeout: float = 0.5) -> List[str]:
+    """
+    Names of the printers enabled in Schoolhouse Smiles, read from its local print server
+    (PrintService.exe). The printer choice is not on the page and no longer in its
+    settings.json - Schoolhouse Smiles keeps it here. [] if the server is not reachable.
+    """
+    try:
+        with urllib.request.urlopen(f"{PRINT_SERVER_URL}/api/settings", timeout=timeout) as resp:
+            settings = json.loads(resp.read().decode("utf-8"))
+        return [p["name"] for p in settings.get("printers", [])
+                if p.get("enabled") and isinstance(p.get("name"), str) and p["name"].strip()]
+    except Exception:
+        return []
 
 
 class DomError(Exception):
